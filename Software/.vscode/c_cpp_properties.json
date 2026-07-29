@@ -1,0 +1,23 @@
+{
+    "configurations": [
+        {
+            "name": "Win32-Cross-Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/src"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE",
+                "__linux__"
+            ],
+            "windowsSdkVersion": "10.0.19041.0",
+            "compilerPath": "",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}
