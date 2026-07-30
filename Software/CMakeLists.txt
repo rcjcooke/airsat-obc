@@ -14,6 +14,8 @@ set(SOURCES
     src/main.cpp
     src/AOCS.cpp
     src/AOCSController.cpp
+    src/FusedAttitudeSensor.cpp
+    src/GY271Magnetometer.cpp
 )
 
 # Define the output executable binary target name
