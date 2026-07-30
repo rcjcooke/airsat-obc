@@ -99,14 +99,16 @@ void AOCS::runIteration() {
     
     float currentYaw = _attitudeSensor.getEstimatedYawHeading();
     float targetTorque = 0.0f; 
-    float mockThrusts[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float mockThrusts[4] = {0.0f, 0.0f, 0.0f, 0.0f}; // Ensure brackets are used here too if missing
 
     if (_attitudeSensor.isSensorHealthy()) {
         float headingError = 0.0f - currentYaw;
         targetTorque = headingError * 0.1f; 
     }
 
-    bool telemFresh = _controller.transmitCommand(targetTorque, mockThrusts);
+    if (!_controller.transmitCommand(targetTorque, mockThrusts)) {
+        std::cerr << "[AOCS WARNING] SPI Bus Drop: Handshake with Teensy failed." << std::endl;
+    }
 
     std::cout << "[FLIGHT MODE] Yaw: " << currentYaw << " rad | "
               << "Torque: " << targetTorque << " Nm | "

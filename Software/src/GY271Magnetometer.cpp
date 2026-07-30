@@ -36,9 +36,16 @@ void GY271Magnetometer::closeDevice() {
 }
 
 bool GY271Magnetometer::writeRegister(uint8_t reg, uint8_t value) {
-    uint8_t buffer = { reg, value };
-    return (write(_i2cFd, buffer, 2) == 2);
+    // FIX: Change 'buffer' to an array type of size 2
+    uint8_t buffer[2] = { reg, value };
+    
+    if (write(_i2cFd, buffer, 2) != 2) {
+        std::cerr << "[I2C] Failed writing byte value to target register: 0x" << std::hex << (int)reg << std::endl;
+        return false;
+    }
+    return true;
 }
+
 
 bool GY271Magnetometer::readRegisters(uint8_t startReg, uint8_t* outputBuffer, size_t length) {
     if (write(_i2cFd, &startReg, 1) != 1) return false;
