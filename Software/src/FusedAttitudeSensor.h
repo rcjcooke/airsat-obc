@@ -9,7 +9,11 @@ public:
     bool init();
     void update();
 
-    // Outputs computed heading alignment angle back inside application ranges (Radians)
+    // Calibration Hooks
+    void requestCalibrationStart();
+    void requestCalibrationEnd();
+    bool isSystemCalibrated() const;
+
     float getEstimatedYawHeading() const;
     bool isSensorHealthy() const;
 
@@ -17,6 +21,7 @@ private:
     GY271Magnetometer _magSensor;
     float _currentYawHeading;
     bool _healthy;
+    bool _calibratingMode;
 };
 
 #endif

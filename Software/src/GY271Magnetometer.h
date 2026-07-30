@@ -12,17 +12,30 @@ public:
     bool init();
     void closeDevice();
     
-    // Reads raw magnetic field strength vector (Microteslas - uT)
+    // Reads calibrated microtesla data if calibrated, otherwise raw data
     bool readMagneticField(float& xUt, float& yUt, float& zUt);
 
+    // Calibration Controls
+    void startCalibration();
+    void updateCalibrationValues(); // Called routinely during the 360-degree rotation
+    void endCalibration();
+    
+    bool isCalibrated() const { return _isCalibrated; }
+
 private:
-    // Low level I2C transaction helper abstraction layouts
     bool writeRegister(uint8_t reg, uint8_t value);
     bool readRegisters(uint8_t startReg, uint8_t* outputBuffer, size_t length);
+    bool readRawData(float& rx, float& ry, float& rz);
 
     std::string _devicePath;
     uint8_t _address;
     int _i2cFd;
+
+    // Hard-Iron Offset Variables
+    bool _isCalibrating;
+    bool _isCalibrated;
+    float _offsetX, _offsetY, _offsetZ;
+    float _minX, _maxX, _minY, _maxY, _minZ, _maxZ;
 };
 
 #endif

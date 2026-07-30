@@ -4,34 +4,47 @@
 AOCS::AOCS() : _controller("/dev/spidev0.0", 2000000), _attitudeSensor() {}
 
 bool AOCS::initialize() {
-    // Both interfaces must return successfully to clear initialization checks
-    bool spiOk = _controller.init();
-    bool i2cOk = _attitudeSensor.init();
-    return (spiOk && i2cOk);
+    return (_controller.init() && _attitudeSensor.init());
 }
 
 void AOCS::runIteration() {
-    // 1. Refresh internal attitude sensor states
-    _attitudeSensor.update();
-    float currentYaw = _attitudeSensor.getEstimatedYawHeading();
+    static uint32_t iterationCounter = 0;
+    iterationCounter++;
 
-    // 2. High-Level Flight Control Logic Blueprint
-    // The target torque from the Pi can now respond directly to actual physical sensor measurements!
+    // 1. Service state tracking loops
+    _attitudeSensor.update();
+
+    // 2. Automated Calibration Lifecycle Sequence:
+    // First 15 seconds (150 iterations at 10Hz): Run the calibration routine
+    if (iterationCounter < 150) {
+        if (iterationCounter == 1) {
+            _attitudeSensor.requestCalibrationStart();
+        }
+        if (iterationCounter % 10 == 0) {
+            std::cout << "[AOCS SYSTEM] Calibrating Magnetometer... T-Minus " 
+                      << (15 - (iterationCounter / 10)) << "s" << std::endl;
+        }
+        return; // Halt command processing execution until calibration finishes
+    } 
+    else if (iterationCounter == 150) {
+        _attitudeSensor.requestCalibrationEnd();
+        std::cout << "[AOCS SYSTEM] Ready for Flight Mode initialization profiles." << std::endl;
+        return;
+    }
+
+    // 3. Normal Flight Control Space (Begins at T + 15 seconds)
+    float currentYaw = _attitudeSensor.getEstimatedYawHeading();
     float targetTorque = 0.0f; 
     float mockThrusts[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
     if (_attitudeSensor.isSensorHealthy()) {
-        // Example Proportional Control tracking strategy: try to steer the vehicle back to 0.0 radians
         float headingError = 0.0f - currentYaw;
-        targetTorque = headingError * 0.1f; // Loop gain multiplier conversion factor
+        targetTorque = headingError * 0.1f; 
     }
 
-    // 3. Command synchronization handshake pass down over SPI bus
     bool telemFresh = _controller.transmitCommand(targetTorque, mockThrusts);
 
-    // 4. Trace comprehensive systems feedback status metrics
-    std::cout << "[FLIGHT ITERATION] Yaw Angle: " << currentYaw << " rad | "
-              << "Command Torque: " << targetTorque << " Nm | "
-              << "Teensy Momentum Feedback: " << _controller.getLatestMomentum() << " kg*m^2/s | "
+    std::cout << "[FLIGHT MODE] Calibrated Yaw: " << currentYaw << " rad | "
+              << "Torque Output: " << targetTorque << " Nm | "
               << "Link: " << (telemFresh ? "OK" : "DROP ⚠️") << std::endl;
 }
