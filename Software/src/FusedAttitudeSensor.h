@@ -9,8 +9,9 @@ public:
     bool init();
     void update();
 
-    // Calibration Hooks
+    // Centralized Calibration Methods
     void requestCalibrationStart();
+    void updateCalibration(); // Central collection node for all embedded sensor modules
     void requestCalibrationEnd();
     bool isSystemCalibrated() const;
 
@@ -19,9 +20,10 @@ public:
 
 private:
     GY271Magnetometer _magSensor;
+    // Future expansion sensors (e.g., IMU MPU6050, StarTracker, etc.) can be placed cleanly here
+    
     float _currentYawHeading;
     bool _healthy;
-    bool _calibratingMode;
 };
 
 #endif
