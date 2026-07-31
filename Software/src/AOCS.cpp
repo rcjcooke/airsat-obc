@@ -20,11 +20,13 @@ bool AOCS::initialize() {
     std::cout << "[AOCS SYSTEM] Boot sequence complete. Initiating open-loop calibration maneuver..." << std::endl;
     calibrateSensors(15000);
 
+    // Seed the initial timestamp immediately after calibration concludes
+    _lastExecutionTime = std::chrono::steady_clock::now();
+
     return true;
 }
 
 void AOCS::setTargetAttitude(float targetRad) {
-    // Standardize input angles between -PI and +PI radians
     _targetAttitudeRad = std::atan2(std::sin(targetRad), std::cos(targetRad));
     std::cout << "[GUIDANCE] New target attitude set: " << _targetAttitudeRad << " rad" << std::endl;
 }
@@ -73,11 +75,16 @@ void AOCS::calibrateSensors(uint32_t durationMs) {
 }
 
 void AOCS::runIteration() {
-    // 1. Refresh hardware sensor parameters
+    // 1. Calculate the exact dynamic time delta (dt) since the last execution path
+    auto currentTime = std::chrono::steady_clock::now();
+    float dt = std::chrono::duration<float>(currentTime - _lastExecutionTime).count();
+    _lastExecutionTime = currentTime; // Update the tracking baseline marker immediately
+
+    // 2. Refresh hardware sensor parameters
     _attitudeSensor.update();
     
     if (!_attitudeSensor.isSensorHealthy()) {
-        std::cerr << "[AOCS FAULT] Sensor stream failure. Forcing zero-torque emergency layout." << std::endl;
+        std::cerr << "[AOCS FAULT] Sensor stream failure. Forcing zero-torque emergency state." << std::endl;
         float safeThrust[] = {0.0f, 0.0f, 0.0f, 0.0f};
         _controller.transmitCommand(0.0f, safeThrust);
         return;
@@ -85,47 +92,42 @@ void AOCS::runIteration() {
 
     float currentYaw = _attitudeSensor.getEstimatedYawHeading();
 
-    // 2. Numerical Derivative calculation: Determine satellite rotational velocity (rad/s)
-    // Run loop at 10Hz -> delta_t = 0.1 seconds
+    // 3. Dynamic Velocity Derivative Calculation
     float satelliteVelocityRadS = 0.0f;
     if (!_isFirstIteration) {
-        float deltaYaw = currentYaw - _lastYawRad;
-        // Correct for wrap-around boundary shifts over -PI / +PI lines
-        deltaYaw = std::atan2(std::sin(deltaYaw), std::cos(deltaYaw));
-        satelliteVelocityRadS = deltaYaw / 0.1f; 
+        // Guard against zero-division errors if the loop executes faster than system clock resolution
+        if (dt > 0.00001f) {
+            float deltaYaw = currentYaw - _lastYawRad;
+            // Correct for boundary wrap-around conditions over the -PI/+PI limits
+            deltaYaw = std::atan2(std::sin(deltaYaw), std::cos(deltaYaw));
+            satelliteVelocityRadS = deltaYaw / dt; 
+        }
     } else {
         _isFirstIteration = false;
+        _lastYawRad = currentYaw;
+        return; // Skip the rest of first step since velocity cannot be established yet
     }
     _lastYawRad = currentYaw;
 
-    // 3. Compute Tracking Errors
+    // 4. Compute Tracking Errors
     float headingError = _targetAttitudeRad - currentYaw;
-    headingError = std::atan2(std::sin(headingError), std::cos(headingError)); // Handle wrap-around
+    headingError = std::atan2(std::sin(headingError), std::cos(headingError));
 
-    // 4. Calculate Critically Damped Gains dynamically
-    // Kd = 2 * sqrt(Kp * I)
+    // 5. Apply the Attitude Control Model Law using dynamic damping
     float kp = AirSatConstraints::KP_GAIN;
     float kd = 2.0f * std::sqrt(kp * AirSatConstraints::SATELLITE_INERTIA);
-
-    // 5. Apply the Attitude Control Model Law
     float requestedTorque = (kp * headingError) - (kd * satelliteVelocityRadS);
 
     // 6. Enforce Physical Hardware Constraints
-    // Constraint A: Core Motor Mechanical Torque Limits
     if (requestedTorque > AirSatConstraints::MAX_MOTOR_TORQUE)  requestedTorque = AirSatConstraints::MAX_MOTOR_TORQUE;
     if (requestedTorque < -AirSatConstraints::MAX_MOTOR_TORQUE) requestedTorque = -AirSatConstraints::MAX_MOTOR_TORQUE;
 
-    // Constraint B: Reaction Wheel Momentum Saturation Interlocks
     float currentWheelMomentum = _controller.getLatestMomentum();
-    
-    // Torque is the rate of change of angular momentum. 
-    // To accelerate the satellite positively, the motor must apply a negative torque to the reaction wheel.
-    // Therefore, if the wheel is saturated positively, it cannot accept negative torque.
     if (currentWheelMomentum >= AirSatConstraints::MAX_WHEEL_MOMENTUM && requestedTorque < 0.0f) {
-        requestedTorque = 0.0f; // Interlock engaged: Momentum saturation reached
+        requestedTorque = 0.0f; 
     }
     else if (currentWheelMomentum <= -AirSatConstraints::MAX_WHEEL_MOMENTUM && requestedTorque > 0.0f) {
-        requestedTorque = 0.0f; // Interlock engaged: Momentum saturation reached
+        requestedTorque = 0.0f; 
     }
 
     // 7. Route verified variables down over the SPI link to the platform actuators
@@ -134,8 +136,8 @@ void AOCS::runIteration() {
         std::cerr << "[AOCS WARNING] SPI frame dropped during active control loop step." << std::endl;
     }
 
-    // 8. Debug Telemetry Readout
-    std::cout << "[CONTROL LOOP] Target: " << _targetAttitudeRad << " | Current: " << currentYaw 
-              << " | Error: " << headingError << " | Out Torque: " << requestedTorque 
-              << " Nm | Wheel Momentum: " << currentWheelMomentum << " kg*m^2/s" << std::endl;
+    // 8. Debug Telemetry Readout showing precise dynamic dt performance metrics
+    std::cout << "[CONTROL LOOP] dt: " << dt << "s | Target: " << _targetAttitudeRad 
+              << " | Current: " << currentYaw << " | Error: " << headingError 
+              << " | Vel: " << satelliteVelocityRadS << " rad/s | Out Torque: " << requestedTorque << " Nm" << std::endl;
 }

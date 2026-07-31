@@ -3,16 +3,14 @@
 
 #include "AOCSController.h"
 #include "FusedAttitudeSensor.h"
+#include <chrono>
 
 class AOCS {
 public:
-    // Physical constraints and design constants for the AirSat Platform
     struct AirSatConstraints {
         static constexpr float SATELLITE_INERTIA   = 0.0500f; // I_sat (kg*m^2)
         static constexpr float MAX_MOTOR_TORQUE    = 0.1500f; // Max Torque limit (N*m)
         static constexpr float MAX_WHEEL_MOMENTUM  = 0.0200f; // Wheel saturation limit (kg*m^2/s)
-        
-        // Controller Tuning (Proportional Gain chosen for crisp response)
         static constexpr float KP_GAIN             = 0.8000f; 
     };
 
@@ -25,23 +23,21 @@ public:
 
     AOCS();
     bool initialize();
-    
-    // Core Timed Execution Path (10Hz)
     void runIteration();
-
-    // Guidance Command API
     void setTargetAttitude(float targetRad);
-
     void calibrateSensors(uint32_t durationMs = 15000);
 
 private:
     AOCSController _controller;
     FusedAttitudeSensor _attitudeSensor;
 
-    // Control Model State Tracking Variables
+    // Control Model State Tracking
     float _targetAttitudeRad;
     float _lastYawRad;
     bool _isFirstIteration;
+
+    // High-Resolution Pacing Clock
+    std::chrono::steady_clock::time_point _lastExecutionTime;
 };
 
 #endif
