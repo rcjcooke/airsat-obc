@@ -6,7 +6,11 @@
 
 AOCS::AOCS() 
     : _controller("/dev/spidev0.0", 2000000), _attitudeSensor(),
-      _targetAttitudeRad(0.0f), _lastYawRad(0.0f), _isFirstIteration(true) {}
+      _targetAttitudeRad(0.0f), _lastYawRad(0.0f), _isFirstIteration(true),
+      _hasReceivedAnyTelemetry(false) {
+          // Initialize timestamp to creation point baseline
+          _lastValidTelemetryTime = std::chrono::steady_clock::now();
+      }
 
 bool AOCS::initialize() {
     bool spiOk = _controller.init();
@@ -55,8 +59,12 @@ void AOCS::calibrateSensors(uint32_t durationMs) {
             currentCommandedTorque = 0.0f;
         }
 
-        // Open-loop calibration outputs change systematically, so we always transmit here
-        _controller.updateActuators(currentCommandedTorque, dummyThrusts);
+        // Capture returned handshake frames during calibration rotation sweeps
+        if (_controller.updateActuators(currentCommandedTorque, dummyThrusts)) {
+            _lastValidTelemetryTime = std::chrono::steady_clock::now();
+            _hasReceivedAnyTelemetry = true;
+        }
+        
         _attitudeSensor.updateCalibration();
 
         auto iterEnd = std::chrono::steady_clock::now();
@@ -116,9 +124,30 @@ void AOCS::runIteration() {
 
     float currentThrust[] = {0.0f, 0.0f, 0.0f, 0.0f};
 
-    // Hand execution variables off. The controller handles command validation and heartbeat loops internally.
-    _controller.updateActuators(requestedTorque, currentThrust);
+    // 1. Fire the actuator update loop. 
+    // This returns true ONLY if a structurally integral validation handshake packet returns.
+    bool freshHandshakeReceived = _controller.updateActuators(requestedTorque, currentThrust);
+    
+    if (freshHandshakeReceived) {
+        _lastValidTelemetryTime = currentTime;
+        _hasReceivedAnyTelemetry = true;
+    }
 
+    // 2. Calculate the age of the data cache in seconds
+    float telemetryAgeSeconds = std::chrono::duration<float>(currentTime - _lastValidTelemetryTime).count();
+
+    // 3. Output comprehensive diagnostic stream logs
     std::cout << "[CONTROL LOOP] Target: " << _targetAttitudeRad << " | Current: " << currentYaw 
-              << " | Torque: " << requestedTorque << " Nm | Momentum Feedback: " << currentWheelMomentum << std::endl;
+              << " | Torque: " << requestedTorque << " Nm" << std::endl;
+              
+    std::cout << "[BUS DIAGNOSTICS] Tx State: " << (_controller.isLastTransactionValid() ? "SUCCESS ✅" : "BUS IDLE/DROP ❌")
+              << " | Pi Rx Drops: " << _controller.getLocalRxErrors()
+              << " | Teensy Rx Drops: " << _controller.getTeensyRxErrorCount();
+              
+    if (_hasReceivedAnyTelemetry) {
+        std::cout << " | Last Telem Received: " << telemetryAgeSeconds << "s ago" << std::endl;
+    } else {
+        std::cout << " | Last Telem Received: NEVER ⚠️" << std::endl;
+    }
+    std::cout << "------------------------------------------------------------------------" << std::endl;
 }

@@ -31,11 +31,14 @@ private:
     AOCSController _controller;
     FusedAttitudeSensor _attitudeSensor;
 
-    // Control Model State Tracking
     float _targetAttitudeRad;
     float _lastYawRad;
     bool _isFirstIteration;
     std::chrono::steady_clock::time_point _lastExecutionTime;
+
+    // Bus Diagnostic Logging States
+    std::chrono::steady_clock::time_point _lastValidTelemetryTime;
+    bool _hasReceivedAnyTelemetry;
 };
 
 #endif
