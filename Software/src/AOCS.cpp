@@ -20,9 +20,7 @@ bool AOCS::initialize() {
     std::cout << "[AOCS SYSTEM] Boot sequence complete. Initiating open-loop calibration maneuver..." << std::endl;
     calibrateSensors(15000);
 
-    // Seed the initial timestamp immediately after calibration concludes
     _lastExecutionTime = std::chrono::steady_clock::now();
-
     return true;
 }
 
@@ -57,7 +55,8 @@ void AOCS::calibrateSensors(uint32_t durationMs) {
             currentCommandedTorque = 0.0f;
         }
 
-        _controller.transmitCommand(currentCommandedTorque, dummyThrusts);
+        // Open-loop calibration outputs change systematically, so we always transmit here
+        _controller.updateActuators(currentCommandedTorque, dummyThrusts);
         _attitudeSensor.updateCalibration();
 
         auto iterEnd = std::chrono::steady_clock::now();
@@ -70,74 +69,56 @@ void AOCS::calibrateSensors(uint32_t durationMs) {
     }
 
     currentCommandedTorque = 0.0f;
-    _controller.transmitCommand(currentCommandedTorque, dummyThrusts);
+    _controller.updateActuators(currentCommandedTorque, dummyThrusts);
     _attitudeSensor.requestCalibrationEnd();
 }
 
 void AOCS::runIteration() {
-    // 1. Calculate the exact dynamic time delta (dt) since the last execution path
     auto currentTime = std::chrono::steady_clock::now();
     float dt = std::chrono::duration<float>(currentTime - _lastExecutionTime).count();
-    _lastExecutionTime = currentTime; // Update the tracking baseline marker immediately
+    _lastExecutionTime = currentTime;
 
-    // 2. Refresh hardware sensor parameters
     _attitudeSensor.update();
-    
     if (!_attitudeSensor.isSensorHealthy()) {
-        std::cerr << "[AOCS FAULT] Sensor stream failure. Forcing zero-torque emergency state." << std::endl;
         float safeThrust[] = {0.0f, 0.0f, 0.0f, 0.0f};
-        _controller.transmitCommand(0.0f, safeThrust);
+        _controller.updateActuators(0.0f, safeThrust);
         return;
     }
 
     float currentYaw = _attitudeSensor.getEstimatedYawHeading();
-
-    // 3. Dynamic Velocity Derivative Calculation
     float satelliteVelocityRadS = 0.0f;
     if (!_isFirstIteration) {
-        // Guard against zero-division errors if the loop executes faster than system clock resolution
         if (dt > 0.00001f) {
             float deltaYaw = currentYaw - _lastYawRad;
-            // Correct for boundary wrap-around conditions over the -PI/+PI limits
             deltaYaw = std::atan2(std::sin(deltaYaw), std::cos(deltaYaw));
             satelliteVelocityRadS = deltaYaw / dt; 
         }
     } else {
         _isFirstIteration = false;
         _lastYawRad = currentYaw;
-        return; // Skip the rest of first step since velocity cannot be established yet
+        return; 
     }
     _lastYawRad = currentYaw;
 
-    // 4. Compute Tracking Errors
     float headingError = _targetAttitudeRad - currentYaw;
     headingError = std::atan2(std::sin(headingError), std::cos(headingError));
 
-    // 5. Apply the Attitude Control Model Law using dynamic damping
     float kp = AirSatConstraints::KP_GAIN;
     float kd = 2.0f * std::sqrt(kp * AirSatConstraints::SATELLITE_INERTIA);
     float requestedTorque = (kp * headingError) - (kd * satelliteVelocityRadS);
 
-    // 6. Enforce Physical Hardware Constraints
     if (requestedTorque > AirSatConstraints::MAX_MOTOR_TORQUE)  requestedTorque = AirSatConstraints::MAX_MOTOR_TORQUE;
     if (requestedTorque < -AirSatConstraints::MAX_MOTOR_TORQUE) requestedTorque = -AirSatConstraints::MAX_MOTOR_TORQUE;
 
     float currentWheelMomentum = _controller.getLatestMomentum();
-    if (currentWheelMomentum >= AirSatConstraints::MAX_WHEEL_MOMENTUM && requestedTorque < 0.0f) {
-        requestedTorque = 0.0f; 
-    }
-    else if (currentWheelMomentum <= -AirSatConstraints::MAX_WHEEL_MOMENTUM && requestedTorque > 0.0f) {
-        requestedTorque = 0.0f; 
-    }
+    if (currentWheelMomentum >= AirSatConstraints::MAX_WHEEL_MOMENTUM && requestedTorque < 0.0f) requestedTorque = 0.0f;
+    if (currentWheelMomentum <= -AirSatConstraints::MAX_WHEEL_MOMENTUM && requestedTorque > 0.0f) requestedTorque = 0.0f;
 
-    // 7. Route verified variables down over the SPI link to the platform actuators
-    float mockThrusts[] = {0.0f, 0.0f, 0.0f, 0.0f};
-    if (!_controller.transmitCommand(requestedTorque, mockThrusts)) {
-        std::cerr << "[AOCS WARNING] SPI frame dropped during active control loop step." << std::endl;
-    }
+    float currentThrust[] = {0.0f, 0.0f, 0.0f, 0.0f};
 
-    // 8. Debug Telemetry Readout showing precise dynamic dt performance metrics
-    std::cout << "[CONTROL LOOP] dt: " << dt << "s | Target: " << _targetAttitudeRad 
-              << " | Current: " << currentYaw << " | Error: " << headingError 
-              << " | Vel: " << satelliteVelocityRadS << " rad/s | Out Torque: " << requestedTorque << " Nm" << std::endl;
+    // Hand execution variables off. The controller handles command validation and heartbeat loops internally.
+    _controller.updateActuators(requestedTorque, currentThrust);
+
+    std::cout << "[CONTROL LOOP] Target: " << _targetAttitudeRad << " | Current: " << currentYaw 
+              << " | Torque: " << requestedTorque << " Nm | Momentum Feedback: " << currentWheelMomentum << std::endl;
 }

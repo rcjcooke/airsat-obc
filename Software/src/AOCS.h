@@ -35,8 +35,6 @@ private:
     float _targetAttitudeRad;
     float _lastYawRad;
     bool _isFirstIteration;
-
-    // High-Resolution Pacing Clock
     std::chrono::steady_clock::time_point _lastExecutionTime;
 };
 

@@ -3,24 +3,28 @@
 
 #include <string>
 #include <cstdint>
+#include <chrono>
 
 class AOCSController {
 public:
+    struct CommConstants {
+        // Minimum frequency to request updates from Teensy (200ms = 5Hz)
+        static constexpr uint32_t MIN_COMM_PERIOD_MS = 200; 
+        static constexpr float COMMAND_EPSILON       = 0.00001f;
+    };
+
     AOCSController(const std::string& device = "/dev/spidev0.0", uint32_t speedHz = 2000000);
     ~AOCSController();
 
     bool init();
     void closeConnection();
     
-    // Core Interface: Drive the bus using pure application variables
-    bool transmitCommand(float targetTorque, const float targetThrust[4]);
+    // Core Interface: Automatically determines if a write is a Command delta or a NOP telemetry poll
+    bool updateActuators(float targetTorque, const float targetThrust[4]);
     
-    // Telemetry Getters: Access cached, validated data parameters on demand
     float getLatestMomentum() const;
     uint16_t getLatestPropellant() const;
     uint16_t getTeensyRxErrorCount() const;
-    
-    // Diagnostic Getters
     uint32_t getLocalRxErrors() const;
     bool isLastTransactionValid() const;
 
@@ -29,16 +33,20 @@ private:
     uint32_t _speedHz;
     int _spiFd;
     
-    // Cached internal state variables (persisted across un-synced frames)
+    // Cache variables
     float _cachedMomentum;
     uint16_t _cachedPropellant;
     uint16_t _cachedTeensyErrors;
-    
     uint32_t _localRxErrors;
     bool _lastTransactionValid;
 
-    // Opaque helper method to hide internal Fletcher-16 logic
+    // Change detection state engine
+    float _lastSentTorque;
+    float _lastSentThrust[4];
+    std::chrono::steady_clock::time_point _lastCommTime;
+
     uint16_t calculateFletcher16(const uint8_t* data, size_t count);
+    bool executeFullDuplexTransfer(float torque, const float thrust[4], bool isNop);
 };
 
 #endif
