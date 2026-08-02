@@ -3,42 +3,51 @@
 #include <chrono>
 #include <csignal>
 #include <atomic>
+#include <string>
 #include "AOCS.h"
 
-// Atomic flag to ensure safe multi-threaded access during signal handling
 std::atomic<bool> runApplication(true);
 
-// POSIX Signal Handler Function Callback
 void signalHandler(int signalNumber) {
     if (signalNumber == SIGINT || signalNumber == SIGTERM) {
         std::cout << "\n[OBC CORE] Termination signal received. Cleaning up subsystems..." << std::endl;
-        runApplication = false; // Gracefully breaks the main while loop
+        runApplication = false;
     }
 }
 
-int main() {
+int main(int argc, char* argv[]) {
     std::cout << "Starting Raspberry Pi OBC Core Software Application..." << std::endl;
 
-    // Register POSIX system signals for clean exit traps
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
 
+    // 1. Command-line configuration parsing state
+    bool executeCalibration = true;
+
+    for (int i = 1; i < argc; ++i) {
+        std::string argument = argv[i];
+        if (argument == "--skip-cal") {
+            executeCalibration = false;
+        }
+    }
+
     AOCS aocsSubsystem;
 
-    if (!aocsSubsystem.initialize()) {
+    // 2. Hand down the runtime argument condition to the initialization engine
+    if (!aocsSubsystem.initialize(executeCalibration)) {
         std::cerr << "[CRITICAL ERROR] Fatal interface failure initializing AOCS interface." << std::endl;
         return -1;
     }
 
-    std::cout << "OBC AOCS Subsystem Handshake Successful. Entering main execution loop." << std::endl;
+    std::cout << "OBC AOCS Subsystem Handshake Successful. Entering flight loop." << std::endl;
 
-    // Fixed 10Hz Flight Loop Timing Structure (100 millisecond step sizes)
+    aocsSubsystem.setTargetAttitude(1.5f);
+
     const auto loopPeriod = std::chrono::milliseconds(100);
 
     while (runApplication) {
         auto startTime = std::chrono::steady_clock::now();
 
-        // Run core automation iteration sequence
         aocsSubsystem.runIteration();
 
         auto endTime = std::chrono::steady_clock::now();

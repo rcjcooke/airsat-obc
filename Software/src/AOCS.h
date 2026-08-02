@@ -22,7 +22,10 @@ public:
     };
 
     AOCS();
-    bool initialize();
+    
+    // Updated: Accept a runCalibration configuration flag
+    bool initialize(bool runCalibration = true);
+    
     void runIteration();
     void setTargetAttitude(float targetRad);
     void calibrateSensors(uint32_t durationMs = 15000);
@@ -36,7 +39,6 @@ private:
     bool _isFirstIteration;
     std::chrono::steady_clock::time_point _lastExecutionTime;
 
-    // Bus Diagnostic Logging States
     std::chrono::steady_clock::time_point _lastValidTelemetryTime;
     bool _hasReceivedAnyTelemetry;
 };

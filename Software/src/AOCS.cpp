@@ -8,11 +8,10 @@ AOCS::AOCS()
     : _controller("/dev/spidev0.0", 2000000), _attitudeSensor(),
       _targetAttitudeRad(0.0f), _lastYawRad(0.0f), _isFirstIteration(true),
       _hasReceivedAnyTelemetry(false) {
-          // Initialize timestamp to creation point baseline
           _lastValidTelemetryTime = std::chrono::steady_clock::now();
       }
 
-bool AOCS::initialize() {
+bool AOCS::initialize(bool runCalibration) {
     bool spiOk = _controller.init();
     bool i2cOk = _attitudeSensor.init();
     
@@ -21,8 +20,12 @@ bool AOCS::initialize() {
         return false;
     }
 
-    std::cout << "[AOCS SYSTEM] Boot sequence complete. Initiating open-loop calibration maneuver..." << std::endl;
-    calibrateSensors(15000);
+    if (runCalibration) {
+        std::cout << "[AOCS SYSTEM] Boot sequence complete. Initiating open-loop calibration maneuver..." << std::endl;
+        calibrateSensors(15000);
+    } else {
+        std::cout << "[AOCS SYSTEM] ⏭️ Bypassing sensor and platform calibration via command line flag override." << std::endl;
+    }
 
     _lastExecutionTime = std::chrono::steady_clock::now();
     return true;

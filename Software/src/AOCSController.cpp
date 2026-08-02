@@ -11,29 +11,30 @@
 struct CommandPayload {
     float torque;
     float thrust[4];
-    uint8_t flags; // NEW: Byte index 20 holds flags (0x00 = Valid Cmd, 0xFF = NOP Telemetry Poll Only)
-    uint8_t alignment_pad; // Keeps struct balanced at 22 bytes
-};
+    uint8_t flags;
+    uint8_t alignment_pad;
+}; // 22 bytes
 
 struct TelemetryPayload {
     float momentum;
     uint16_t propellant;
     uint16_t error_count;
-    uint8_t padding[14]; 
-};
+    uint8_t padding[14]; // FIXED: Match the 14-byte array footprint
+}; // 22 bytes
 
 struct CommandFrame {
-    uint8_t sync[2]; // 0xAA, 0x55
+    uint8_t sync[2];
     CommandPayload payload;
     uint16_t checksum;
-};
+}; // 26 bytes
 
 struct TelemetryFrame {
-    uint8_t sync[2]; // 0xAA, 0x55
+    uint8_t sync[2];
     TelemetryPayload payload;
     uint16_t checksum;
-};
+}; // 26 bytes
 #pragma pack(pop)
+
 
 AOCSController::AOCSController(const std::string& device, uint32_t speedHz)
     : _devicePath(device), _speedHz(speedHz), _spiFd(-1),
@@ -55,6 +56,11 @@ bool AOCSController::init() {
     if (ioctl(_spiFd, SPI_IOC_RD_BITS_PER_WORD, &bits) < 0) return false;
     if (ioctl(_spiFd, SPI_IOC_WR_MAX_SPEED_HZ, &_speedHz) < 0) return false;
     if (ioctl(_spiFd, SPI_IOC_RD_MAX_SPEED_HZ, &_speedHz) < 0) return false;
+
+    std::cout << "[ALIGNMENT CHECK] CommandFrame Size: " << sizeof(CommandFrame) 
+          << " | TelemetryFrame Size: " << sizeof(TelemetryFrame) << std::endl;
+
+
     return true;
 }
 
@@ -98,34 +104,77 @@ bool AOCSController::updateActuators(float targetTorque, const float targetThrus
     return false;
 }
 
+// Explicitly uncomment this line when testing with a physical loopback cable on the Pi pins.
+// Comment it out when deploying production code connected to the Teensy.
+#define SPI_LOOPBACK_TEST 
+
 bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[4], bool isNop) {
     if (_spiFd < 0) return false;
 
+    // 1. Pack the operational command frame exactly like production
     CommandFrame txFrame;
-    txFrame.sync[0] = 0xAA; txFrame.sync[1] = 0x55;
+    txFrame.sync[0] = 0xAA; 
+    txFrame.sync[1] = 0x55;
     txFrame.payload.torque = torque;
     std::memcpy(txFrame.payload.thrust, thrust, sizeof(txFrame.payload.thrust));
-    
-    // Inject the flag identifier
     txFrame.payload.flags = isNop ? 0x22 : 0x11;
     txFrame.payload.alignment_pad = 0x00;
-    
     txFrame.checksum = calculateFletcher16(reinterpret_cast<const uint8_t*>(&txFrame), 24);
 
-    TelemetryFrame rxFrame;
-    std::memset(&rxFrame, 0, sizeof(TelemetryFrame));
-
     struct spi_ioc_transfer tr;
-    std::memset(&tr, 0, sizeof(tr));
-    tr.tx_buf = reinterpret_cast<unsigned long>(&txFrame);
-    tr.rx_buf = reinterpret_cast<unsigned long>(&rxFrame);
-    tr.len = sizeof(CommandFrame);
-    tr.speed_hz = _speedHz;
-    tr.bits_per_word = 8;
+    std::memset(&tr, 0, sizeof(tr)); 
+    
+    tr.tx_buf        = reinterpret_cast<unsigned long>(&txFrame);
+    tr.len           = sizeof(CommandFrame); // Exactly 26 bytes
+    tr.speed_hz      = _speedHz;
+    tr.bits_per_word = 8; 
+    tr.cs_change     = 0;  
 
     _lastCommTime = std::chrono::steady_clock::now();
 
-    if (ioctl(_spiFd, SPI_IOC_MESSAGE(1), &tr) < 1) {
+#ifdef SPI_LOOPBACK_TEST
+    // ------------------------------------------------------------------------
+    // PATH A: LOOPBACK TEST MODE
+    // ------------------------------------------------------------------------
+    // Instantiate a structurally correct CommandFrame to capture the returned bytes
+    CommandFrame rxLoopbackFrame;
+    std::memset(&rxLoopbackFrame, 0, sizeof(CommandFrame));
+    
+    tr.rx_buf = reinterpret_cast<unsigned long>(&rxLoopbackFrame);
+
+    if (ioctl(_spiFd, SPI_IOC_MESSAGE(1), &tr) < 0) { 
+        _lastTransactionValid = false;
+        return false;
+    }
+
+    // Process the loopback contents using the production sync and checksum rules
+    if (rxLoopbackFrame.sync[0] == 0xAA && rxLoopbackFrame.sync[1] == 0x55) {
+        uint16_t calculated = calculateFletcher16(reinterpret_cast<const uint8_t*>(&rxLoopbackFrame), 24);
+        
+        if (calculated == rxLoopbackFrame.checksum) {
+            // Checksum matches! Map returned fields to cache so AOCS remains happy
+            _cachedMomentum     = rxLoopbackFrame.payload.torque; 
+            _cachedPropellant   = 999; 
+            _cachedTeensyErrors = 0;
+            _lastTransactionValid = true;
+
+            if (!isNop) {
+                _lastSentTorque = torque;
+                std::memcpy(_lastSentThrust, thrust, sizeof(_lastSentThrust));
+            }
+            return true;
+        }
+    }
+#else
+    // ------------------------------------------------------------------------
+    // PATH B: STANDARD PRODUCTION MODE (Connected to Teensy)
+    // ------------------------------------------------------------------------
+    TelemetryFrame rxFrame;
+    std::memset(&rxFrame, 0, sizeof(TelemetryFrame));
+    
+    tr.rx_buf = reinterpret_cast<unsigned long>(&rxFrame);
+
+    if (ioctl(_spiFd, SPI_IOC_MESSAGE(1), &tr) < 0) { 
         _lastTransactionValid = false;
         return false;
     }
@@ -138,7 +187,6 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
             _cachedTeensyErrors = rxFrame.payload.error_count;
             _lastTransactionValid = true;
 
-            // Only update local command caches if this wasn't a NOP frame
             if (!isNop) {
                 _lastSentTorque = torque;
                 std::memcpy(_lastSentThrust, thrust, sizeof(_lastSentThrust));
@@ -146,6 +194,7 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
             return true;
         }
     }
+#endif
 
     _localRxErrors++;
     _lastTransactionValid = false;
