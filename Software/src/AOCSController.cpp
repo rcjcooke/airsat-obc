@@ -6,6 +6,9 @@
 #include <cstring>
 #include <iostream>
 #include <cmath>
+#include <iomanip>
+#include <fstream>
+#include <unistd.h>
 
 #pragma pack(push, 1)
 struct CommandPayload {
@@ -36,8 +39,8 @@ struct TelemetryFrame {
 #pragma pack(pop)
 
 
-AOCSController::AOCSController(const std::string& device, uint32_t speedHz)
-    : _devicePath(device), _speedHz(speedHz), _spiFd(-1),
+AOCSController::AOCSController(const std::string& device, uint32_t speedHz, int csGpioPin)
+    : _devicePath(device), _speedHz(speedHz), _spiFd(-1), _csGpioPin(csGpioPin), _csGpioConfigured(false),
       _cachedMomentum(0.0f), _cachedPropellant(0), _cachedTeensyErrors(0),
       _localRxErrors(0), _lastTransactionValid(false), _lastSentTorque(-999.0f) {
           for (int i = 0; i < 4; ++i) _lastSentThrust[i] = -999.0f;
@@ -49,6 +52,14 @@ AOCSController::~AOCSController() { closeConnection(); }
 bool AOCSController::init() {
     _spiFd = open(_devicePath.c_str(), O_RDWR);
     if (_spiFd < 0) return false;
+
+    if (!configureCsGpio()) {
+        std::cerr << "[SPI] Failed to configure dedicated chip-select GPIO " << _csGpioPin << std::endl;
+        close(_spiFd);
+        _spiFd = -1;
+        return false;
+    }
+
     uint8_t mode = SPI_MODE_0, bits = 8;
     if (ioctl(_spiFd, SPI_IOC_WR_MODE, &mode) < 0) return false;
     if (ioctl(_spiFd, SPI_IOC_RD_MODE, &mode) < 0) return false;
@@ -64,7 +75,64 @@ bool AOCSController::init() {
     return true;
 }
 
-void AOCSController::closeConnection() { if (_spiFd >= 0) { close(_spiFd); _spiFd = -1; } }
+void AOCSController::closeConnection() {
+    if (_spiFd >= 0) {
+        setCsState(true);
+        close(_spiFd);
+        _spiFd = -1;
+    }
+}
+
+bool AOCSController::configureCsGpio() {
+    if (_csGpioConfigured) return true;
+
+    const std::string gpioBase = "/sys/class/gpio/gpio" + std::to_string(_csGpioPin);
+
+    if (access(gpioBase.c_str(), F_OK) != 0) {
+        std::ofstream exportFile("/sys/class/gpio/export", std::ios::trunc);
+        if (!exportFile.is_open()) {
+            std::cerr << "[SPI] Failed to export GPIO " << _csGpioPin << std::endl;
+            return false;
+        }
+        exportFile << _csGpioPin;
+        exportFile.close();
+    }
+
+    std::ofstream directionFile(gpioBase + "/direction", std::ios::trunc);
+    if (!directionFile.is_open()) {
+        std::cerr << "[SPI] Failed to set GPIO direction for pin " << _csGpioPin << std::endl;
+        return false;
+    }
+    directionFile << "out";
+    directionFile.close();
+
+    std::ofstream valueFile(gpioBase + "/value", std::ios::trunc);
+    if (!valueFile.is_open()) {
+        std::cerr << "[SPI] Failed to open GPIO value interface for pin " << _csGpioPin << std::endl;
+        return false;
+    }
+    valueFile << "1";
+    valueFile.close();
+
+    _csGpioConfigured = true;
+    return true;
+}
+
+void AOCSController::setCsState(bool asserted) {
+    if (!_csGpioConfigured) {
+        return;
+    }
+
+    const std::string valuePath = "/sys/class/gpio/gpio" + std::to_string(_csGpioPin) + "/value";
+    std::ofstream valueFile(valuePath, std::ios::trunc);
+    if (!valueFile.is_open()) {
+        std::cerr << "[SPI] Failed to toggle GPIO " << _csGpioPin << " via sysfs" << std::endl;
+        return;
+    }
+
+    valueFile << (asserted ? '1' : '0');
+    valueFile.close();
+}
 
 uint16_t AOCSController::calculateFletcher16(const uint8_t* data, size_t count) {
     uint16_t sum1 = 0, sum2 = 0;
@@ -106,7 +174,7 @@ bool AOCSController::updateActuators(float targetTorque, const float targetThrus
 
 // Explicitly uncomment this line when testing with a physical loopback cable on the Pi pins.
 // Comment it out when deploying production code connected to the Teensy.
-#define SPI_LOOPBACK_TEST 
+//#define SPI_LOOPBACK_TEST 
 
 bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[4], bool isNop) {
     if (_spiFd < 0) return false;
@@ -121,6 +189,17 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
     txFrame.payload.alignment_pad = 0x00;
     txFrame.checksum = calculateFletcher16(reinterpret_cast<const uint8_t*>(&txFrame), 24);
 
+    auto logRawFrame = [](const char* label, const uint8_t* bytes, size_t count) {
+        std::cout << label << " ";
+        for (size_t i = 0; i < count; ++i) {
+            std::cout << std::setw(2) << std::setfill('0') << std::hex
+                      << std::uppercase << static_cast<int>(bytes[i]) << " ";
+        }
+        std::cout << std::dec << std::endl;
+    };
+
+    logRawFrame("[SPI TRANSMIT] Outbound Frame Hex Dump: ", reinterpret_cast<const uint8_t*>(&txFrame), sizeof(CommandFrame));
+
     struct spi_ioc_transfer tr;
     std::memset(&tr, 0, sizeof(tr)); 
     
@@ -128,7 +207,7 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
     tr.len           = sizeof(CommandFrame); // Exactly 26 bytes
     tr.speed_hz      = _speedHz;
     tr.bits_per_word = 8; 
-    tr.cs_change     = 0;  
+    tr.cs_change     = 0;
 
     _lastCommTime = std::chrono::steady_clock::now();
 
@@ -142,10 +221,16 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
     
     tr.rx_buf = reinterpret_cast<unsigned long>(&rxLoopbackFrame);
 
+    setCsState(false);
+    usleep(1000);
     if (ioctl(_spiFd, SPI_IOC_MESSAGE(1), &tr) < 0) { 
         _lastTransactionValid = false;
         return false;
     }
+
+    logRawFrame("[SPI RECEIVE] Loopback Frame Hex Dump:", reinterpret_cast<const uint8_t*>(&rxLoopbackFrame), sizeof(rxLoopbackFrame));
+    usleep(1000);
+    setCsState(true);
 
     // Process the loopback contents using the production sync and checksum rules
     if (rxLoopbackFrame.sync[0] == 0xAA && rxLoopbackFrame.sync[1] == 0x55) {
@@ -174,10 +259,16 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
     
     tr.rx_buf = reinterpret_cast<unsigned long>(&rxFrame);
 
+    setCsState(false);
+    usleep(1000);
     if (ioctl(_spiFd, SPI_IOC_MESSAGE(1), &tr) < 0) { 
         _lastTransactionValid = false;
         return false;
     }
+
+    logRawFrame("[SPI RECEIVE] Inbound Frame Hex Dump:", reinterpret_cast<const uint8_t*>(&rxFrame), sizeof(rxFrame));
+    usleep(1000);
+    setCsState(true);
 
     if (rxFrame.sync[0] == 0xAA && rxFrame.sync[1] == 0x55) {
         uint16_t calculated = calculateFletcher16(reinterpret_cast<const uint8_t*>(&rxFrame), 24);

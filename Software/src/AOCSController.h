@@ -13,7 +13,7 @@ public:
         static constexpr float COMMAND_EPSILON       = 0.00001f;
     };
 
-    AOCSController(const std::string& device = "/dev/spidev0.0", uint32_t speedHz = 2000000);
+    AOCSController(const std::string& device = "/dev/spidev0.0", uint32_t speedHz = 2000000, int csGpioPin = 17);
     ~AOCSController();
 
     bool init();
@@ -32,6 +32,8 @@ private:
     std::string _devicePath;
     uint32_t _speedHz;
     int _spiFd;
+    int _csGpioPin;
+    bool _csGpioConfigured;
     
     // Cache variables
     float _cachedMomentum;
@@ -46,6 +48,8 @@ private:
     std::chrono::steady_clock::time_point _lastCommTime;
 
     uint16_t calculateFletcher16(const uint8_t* data, size_t count);
+    bool configureCsGpio();
+    void setCsState(bool asserted);
     bool executeFullDuplexTransfer(float torque, const float thrust[4], bool isNop);
 };
 

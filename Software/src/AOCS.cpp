@@ -5,7 +5,7 @@
 #include <cmath>
 
 AOCS::AOCS() 
-    : _controller("/dev/spidev0.0", 2000000), _attitudeSensor(),
+    : _controller("/dev/spidev0.0", 100000), _attitudeSensor(),
       _targetAttitudeRad(0.0f), _lastYawRad(0.0f), _isFirstIteration(true),
       _hasReceivedAnyTelemetry(false) {
           _lastValidTelemetryTime = std::chrono::steady_clock::now();
