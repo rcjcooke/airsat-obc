@@ -15,14 +15,14 @@ public:
     void requestCalibrationEnd();
     bool isSystemCalibrated() const;
 
-    float getEstimatedYawHeading() const;
+    float getEstimatedAttitude() const;
     bool isSensorHealthy() const;
 
 private:
     GY271Magnetometer _magSensor;
     // Future expansion sensors (e.g., IMU MPU6050, StarTracker, etc.) can be placed cleanly here
     
-    float _currentYawHeading;
+    float _currentAttitude;
     bool _healthy;
 };
 

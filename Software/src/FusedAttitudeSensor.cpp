@@ -3,7 +3,7 @@
 #include <iostream>
 
 FusedAttitudeSensor::FusedAttitudeSensor() 
-    : _magSensor("/dev/i2c-1", 0x0D), _currentYawHeading(0.0f), _healthy(false) {}
+    : _magSensor("/dev/i2c-1", 0x0D), _currentAttitude(0.0f), _healthy(false) {}
 
 bool FusedAttitudeSensor::init() {
     _healthy = _magSensor.init();
@@ -15,7 +15,9 @@ void FusedAttitudeSensor::update() {
 
     float mx = 0.0f, my = 0.0f, mz = 0.0f;
     if (_magSensor.readMagneticField(mx, my, mz)) {
-        _currentYawHeading = std::atan2(my, mx);
+        const float rawAttitude = std::atan2(my, mx);
+        // Quantize to configured sensor accuracy to suppress small-angle noise.
+        _currentAttitude = std::round(rawAttitude / GY271_ANGULAR_ACCURACY_RAD) * GY271_ANGULAR_ACCURACY_RAD;
     } else {
         _healthy = false;
     }
@@ -45,5 +47,5 @@ bool FusedAttitudeSensor::isSystemCalibrated() const {
     return _magSensor.isCalibrated(); // Modify to check all operational module bounds if extended
 }
 
-float FusedAttitudeSensor::getEstimatedYawHeading() const { return _currentYawHeading; }
+float FusedAttitudeSensor::getEstimatedAttitude() const { return _currentAttitude; }
 bool FusedAttitudeSensor::isSensorHealthy() const { return _healthy; }

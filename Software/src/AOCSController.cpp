@@ -50,26 +50,21 @@ AOCSController::AOCSController(const std::string& device, uint32_t speedHz, int 
 AOCSController::~AOCSController() { closeConnection(); }
 
 bool AOCSController::init() {
-    if (wiringPiSetupGpio() < 0) {
-        std::cerr << "[SPI] Failed to initialise WiringPi GPIO access" << std::endl;
-        return false;
-    }
+    // if (wiringPiSetupGpio() < 0) {
+    //     std::cerr << "[SPI] Failed to initialise WiringPi GPIO access" << std::endl;
+    //     return false;
+    // }
 
-    if (!configureCsGpio()) {
-        std::cerr << "[SPI] Failed to configure dedicated chip-select GPIO " << _csGpioPin << std::endl;
-        return false;
-    }
+    // if (!configureCsGpio()) {
+    //     std::cerr << "[SPI] Failed to configure dedicated chip-select GPIO " << _csGpioPin << std::endl;
+    //     return false;
+    // }
 
     _spiFd = wiringPiSPISetup(0, _speedHz);
     if (_spiFd < 0) {
         std::cerr << "[SPI] Failed to open WiringPi SPI device" << std::endl;
         return false;
     }
-
-    std::cout << "[ALIGNMENT CHECK] CommandFrame Size: " << sizeof(CommandFrame) 
-          << " | TelemetryFrame Size: " << sizeof(TelemetryFrame) << std::endl;
-
-
     return true;
 }
 
@@ -136,8 +131,7 @@ bool AOCSController::updateActuators(float targetTorque, const float targetThrus
     return false;
 }
 
-// Explicitly uncomment this line when testing with a physical loopback cable on the Pi pins.
-// Comment it out when deploying production code connected to the Teensy.
+// Uncomment this line when testing with a physical loopback cable on the Pi pins.
 //#define SPI_LOOPBACK_TEST 
 
 bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[4], bool isNop) {
@@ -210,17 +204,18 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
     // ------------------------------------------------------------------------
     // PATH B: STANDARD PRODUCTION MODE (Connected to Teensy)
     // ------------------------------------------------------------------------
-    setCsState(false);
-    usleep(1000);
+    // setCsState(false);
+    // usleep(1000);
+    
     // txrxBuffer gets overwritten with receive data in transfer
     if (wiringPiSPIDataRW(0, txrxBuffer, sizeof(txrxBuffer)) < 0) { 
         _lastTransactionValid = false;
         return false;
     }
 
-    logRawFrame("[SPI RECEIVE] Inbound Frame Hex Dump:", txrxBuffer, sizeof(txrxBuffer));
-    usleep(1000);
-    setCsState(true);
+    logRawFrame("[SPI RECEIVE] Inbound Frame Hex Dump:   ", txrxBuffer, sizeof(txrxBuffer));
+    // usleep(1000);
+    // setCsState(true);
 
     TelemetryFrame rxFrame;
     std::memcpy(&rxFrame, txrxBuffer, sizeof(TelemetryFrame));

@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
     AOCS aocsSubsystem;
 
     // 2. Hand down the runtime argument condition to the initialization engine
-    if (!aocsSubsystem.initialize(executeCalibration)) {
+    if (!aocsSubsystem.init(executeCalibration)) {
         std::cerr << "[CRITICAL ERROR] Fatal interface failure initializing AOCS interface." << std::endl;
         return -1;
     }

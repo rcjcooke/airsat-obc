@@ -6,17 +6,18 @@
 
 AOCS::AOCS() 
     : _controller("/dev/spidev0.0", 100000), _attitudeSensor(),
-      _targetAttitudeRad(0.0f), _lastYawRad(0.0f), _isFirstIteration(true),
+      _targetAttitudeRad(0.0f), _lastAttitudeRad(0.0f), _isFirstIteration(true),
       _hasReceivedAnyTelemetry(false) {
           _lastValidTelemetryTime = std::chrono::steady_clock::now();
       }
 
-bool AOCS::initialize(bool runCalibration) {
+bool AOCS::init(bool runCalibration) {
     bool spiOk = _controller.init();
     bool i2cOk = _attitudeSensor.init();
     
     if (!spiOk || !i2cOk) {
-        std::cerr << "[AOCS SYSTEM] Initialization halted due to hardware bus failure." << std::endl;
+        std::cerr << "[AOCS SYSTEM] Initialisation halted due to hardware bus failure: "
+                  << (!spiOk ? "SPI " : "") << (!i2cOk ? "I2C" : "") << std::endl;
         return false;
     }
 
@@ -24,7 +25,7 @@ bool AOCS::initialize(bool runCalibration) {
         std::cout << "[AOCS SYSTEM] Boot sequence complete. Initiating open-loop calibration maneuver..." << std::endl;
         calibrateSensors(15000);
     } else {
-        std::cout << "[AOCS SYSTEM] ⏭️ Bypassing sensor and platform calibration via command line flag override." << std::endl;
+        std::cout << "[AOCS SYSTEM] Bypassing sensor and platform calibration via command line flag override." << std::endl;
     }
 
     _lastExecutionTime = std::chrono::steady_clock::now();
@@ -96,22 +97,22 @@ void AOCS::runIteration() {
         return;
     }
 
-    float currentYaw = _attitudeSensor.getEstimatedYawHeading();
+    float currentAttitude = _attitudeSensor.getEstimatedAttitude();
     float satelliteVelocityRadS = 0.0f;
     if (!_isFirstIteration) {
         if (dt > 0.00001f) {
-            float deltaYaw = currentYaw - _lastYawRad;
-            deltaYaw = std::atan2(std::sin(deltaYaw), std::cos(deltaYaw));
-            satelliteVelocityRadS = deltaYaw / dt; 
+            float delta = currentAttitude - _lastAttitudeRad;
+            delta = std::atan2(std::sin(delta), std::cos(delta));
+            satelliteVelocityRadS = delta / dt; 
         }
     } else {
         _isFirstIteration = false;
-        _lastYawRad = currentYaw;
+        _lastAttitudeRad = currentAttitude;
         return; 
     }
-    _lastYawRad = currentYaw;
+    _lastAttitudeRad = currentAttitude;
 
-    float headingError = _targetAttitudeRad - currentYaw;
+    float headingError = _targetAttitudeRad - currentAttitude;
     headingError = std::atan2(std::sin(headingError), std::cos(headingError));
 
     float kp = AirSatConstraints::KP_GAIN;
@@ -127,7 +128,6 @@ void AOCS::runIteration() {
 
     float currentThrust[] = {0.0f, 0.0f, 0.0f, 0.0f};
 
-    // 1. Fire the actuator update loop. 
     // This returns true ONLY if a structurally integral validation handshake packet returns.
     bool freshHandshakeReceived = _controller.updateActuators(requestedTorque, currentThrust);
     
@@ -136,21 +136,23 @@ void AOCS::runIteration() {
         _hasReceivedAnyTelemetry = true;
     }
 
-    // 2. Calculate the age of the data cache in seconds
     float telemetryAgeSeconds = std::chrono::duration<float>(currentTime - _lastValidTelemetryTime).count();
 
-    // 3. Output comprehensive diagnostic stream logs
-    std::cout << "[CONTROL LOOP] Target: " << _targetAttitudeRad << " | Current: " << currentYaw 
-              << " | Torque: " << requestedTorque << " Nm" << std::endl;
+    auto radToDeg = [](double radians) -> double {
+        return radians * (180.0 / M_PI);
+    };
+    
+    std::cout << "[CONTROL LOOP] Target: " << radToDeg(_targetAttitudeRad) << "° | Current: " << radToDeg(currentAttitude) 
+              << "° | Torque: " << requestedTorque << " Nm" << std::endl;
               
-    std::cout << "[BUS DIAGNOSTICS] Tx State: " << (_controller.isLastTransactionValid() ? "SUCCESS ✅" : "BUS IDLE/DROP ❌")
+    std::cout << "[BUS DIAGNOSTICS] Tx State: " << (_controller.isLastTransactionValid() ? "SUCCESS" : "BUS IDLE/DROP")
               << " | Pi Rx Drops: " << _controller.getLocalRxErrors()
               << " | Teensy Rx Drops: " << _controller.getTeensyRxErrorCount();
               
     if (_hasReceivedAnyTelemetry) {
         std::cout << " | Last Telem Received: " << telemetryAgeSeconds << "s ago" << std::endl;
     } else {
-        std::cout << " | Last Telem Received: NEVER ⚠️" << std::endl;
+        std::cout << " | Last Telem Received: NEVER" << std::endl;
     }
     std::cout << "------------------------------------------------------------------------" << std::endl;
 }

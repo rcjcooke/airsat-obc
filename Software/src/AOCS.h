@@ -24,7 +24,7 @@ public:
     AOCS();
     
     // Updated: Accept a runCalibration configuration flag
-    bool initialize(bool runCalibration = true);
+    bool init(bool runCalibration = true);
     
     void runIteration();
     void setTargetAttitude(float targetRad);
@@ -35,7 +35,7 @@ private:
     FusedAttitudeSensor _attitudeSensor;
 
     float _targetAttitudeRad;
-    float _lastYawRad;
+    float _lastAttitudeRad;
     bool _isFirstIteration;
     std::chrono::steady_clock::time_point _lastExecutionTime;
 
