@@ -26,4 +26,4 @@ target_include_directories(OBC PRIVATE src)
 
 # Link standard system libraries (Required for thread sleep and timing structures)
 find_package(Threads REQUIRED)
-target_link_libraries(OBC PRIVATE Threads::Threads)
+target_link_libraries(OBC PRIVATE Threads::Threads -lwiringPi)
