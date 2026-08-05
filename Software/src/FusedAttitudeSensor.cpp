@@ -2,6 +2,21 @@
 #include <cmath>
 #include <iostream>
 
+// Define the filters
+
+float Filters::quantizeToAccuracy(float value, float accuracy) {
+    return std::round(value / accuracy) * accuracy;
+}
+
+float Filters::filterOutChangesBelowAccuracy(float newValue, float existingValue, float accuracy) {
+    if (std::abs(newValue - existingValue) < accuracy / 2) {
+        return existingValue; // Ignore small changes
+    }
+    return newValue; // Accept significant changes
+}
+
+// FusedAttitudeSensor Implementation
+
 FusedAttitudeSensor::FusedAttitudeSensor() 
     : _magSensor("/dev/i2c-1", 0x0D), _currentAttitude(0.0f), _healthy(false) {}
 
@@ -16,8 +31,8 @@ void FusedAttitudeSensor::update() {
     float mx = 0.0f, my = 0.0f, mz = 0.0f;
     if (_magSensor.readMagneticField(mx, my, mz)) {
         const float rawAttitude = std::atan2(my, mx);
-        // Quantize to configured sensor accuracy to suppress small-angle noise.
-        _currentAttitude = std::round(rawAttitude / GY271_ANGULAR_ACCURACY_RAD) * GY271_ANGULAR_ACCURACY_RAD;
+        // Filter out sensor accuracy noise
+        _currentAttitude = Filters::filterOutChangesBelowAccuracy(rawAttitude, _currentAttitude, GY271Magnetometer::kAccuracy);
     } else {
         _healthy = false;
     }

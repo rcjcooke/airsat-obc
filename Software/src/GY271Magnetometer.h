@@ -5,11 +5,13 @@
 #include <cstdint>
 
 #define ONE_DEGREE_IN_RADIANS 0.01745329252f
-// Magnetometer angular accuracy used by downstream simple noise filtering (datasheet says approx 1-2 degrees)
-constexpr float GY271_ANGULAR_ACCURACY_RAD = ONE_DEGREE_IN_RADIANS * 1.5f;
 
 class GY271Magnetometer {
 public:
+
+    // Magnetometer angular accuracy (datasheet says approx 1-2 degrees)
+    static constexpr float kAccuracy = ONE_DEGREE_IN_RADIANS * 1.5f;
+
     GY271Magnetometer(const std::string& i2cDevice = "/dev/i2c-1", uint8_t i2cAddress = 0x0D);
     ~GY271Magnetometer();
 
