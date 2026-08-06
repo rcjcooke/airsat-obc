@@ -10,7 +10,7 @@
 class GY271Magnetometer {
 public:
     // Magnetometer angular accuracy (datasheet says approx 1-2 degrees)
-    static constexpr float kAccuracy = ONE_DEGREE_IN_RADIANS * 1.5f;
+    static constexpr float kAccuracy = ONE_DEGREE_IN_RADIANS * 2.0f;
 
     GY271Magnetometer(const std::string& i2cDevice = "/dev/i2c-1", uint8_t i2cAddress = 0x0D);
     ~GY271Magnetometer();
