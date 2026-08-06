@@ -3,6 +3,7 @@
 
 #include <string>
 #include <cstdint>
+#include <cstddef>
 
 #define ONE_DEGREE_IN_RADIANS 0.01745329252f
 

@@ -1,9 +1,6 @@
 #include "GY271Magnetometer.h"
-#include <fcntl.h>
+#include <wiringPiI2C.h>
 #include <unistd.h>
-#include <sys/ioctl.h>
-#include <linux/i2c-dev.h>
-#include <cstring>
 #include <iostream>
 #include <limits>
 
@@ -17,10 +14,9 @@ GY271Magnetometer::~GY271Magnetometer() {
 }
 
 bool GY271Magnetometer::init() {
-    _i2cFd = open(_devicePath.c_str(), O_RDWR);
+    closeDevice();
+    _i2cFd = wiringPiI2CSetupInterface(_devicePath.c_str(), static_cast<int>(_address));
     if (_i2cFd < 0) return false;
-
-    if (ioctl(_i2cFd, I2C_SLAVE, _address) < 0) return false;
 
     if (!writeRegister(0x0B, 0x01)) return false; // FBR Register Setup
     if (!writeRegister(0x09, 0x19)) return false; // 100Hz ODR Continuous Mode
@@ -36,11 +32,10 @@ void GY271Magnetometer::closeDevice() {
 }
 
 bool GY271Magnetometer::writeRegister(uint8_t reg, uint8_t value) {
-    // FIX: Change 'buffer' to an array type of size 2
-    uint8_t buffer[2] = { reg, value };
-    
-    if (write(_i2cFd, buffer, 2) != 2) {
-        std::cerr << "[I2C] Failed writing byte value to target register: 0x" << std::hex << (int)reg << std::endl;
+    if (_i2cFd < 0) return false;
+
+    if (wiringPiI2CWriteReg8(_i2cFd, static_cast<int>(reg), static_cast<int>(value)) < 0) {
+        std::cerr << "[GY271Magnetometer] [I2C] Failed writing byte value to target register: 0x" << std::hex << (int)reg << std::endl;
         return false;
     }
     return true;
@@ -48,8 +43,17 @@ bool GY271Magnetometer::writeRegister(uint8_t reg, uint8_t value) {
 
 
 bool GY271Magnetometer::readRegisters(uint8_t startReg, uint8_t* outputBuffer, size_t length) {
-    if (write(_i2cFd, &startReg, 1) != 1) return false;
-    return (read(_i2cFd, outputBuffer, length) == static_cast<ssize_t>(length));
+    if (_i2cFd < 0) return false;
+
+    for (size_t i = 0; i < length; ++i) {
+        int regValue = wiringPiI2CReadReg8(_i2cFd, static_cast<int>(startReg + i));
+        if (regValue < 0) {
+            std::cerr << "[GY271Magnetometer] [I2C] Failed reading byte value from register: 0x" << std::hex << (int)(startReg + i) << std::endl;
+            return false;
+        }
+        outputBuffer[i] = static_cast<uint8_t>(regValue & 0xFF);
+    }
+    return true;
 }
 
 bool GY271Magnetometer::readRawData(float& rx, float& ry, float& rz) {
