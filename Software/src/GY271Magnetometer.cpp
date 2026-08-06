@@ -35,7 +35,7 @@ bool GY271Magnetometer::writeRegister(uint8_t reg, uint8_t value) {
     if (_i2cFd < 0) return false;
 
     if (wiringPiI2CWriteReg8(_i2cFd, static_cast<int>(reg), static_cast<int>(value)) < 0) {
-        std::cerr << "[GY271Magnetometer] [I2C] Failed writing byte value to target register: 0x" << std::hex << (int)reg << std::endl;
+        if (kDebug) std::cerr << "[GY271Magnetometer] [I2C] Failed writing byte value to target register: 0x" << std::hex << (int)reg << std::endl;
         return false;
     }
     return true;
@@ -48,7 +48,7 @@ bool GY271Magnetometer::readRegisters(uint8_t startReg, uint8_t* outputBuffer, s
     for (size_t i = 0; i < length; ++i) {
         int regValue = wiringPiI2CReadReg8(_i2cFd, static_cast<int>(startReg + i));
         if (regValue < 0) {
-            std::cerr << "[GY271Magnetometer] [I2C] Failed reading byte value from register: 0x" << std::hex << (int)(startReg + i) << std::endl;
+            if (kDebug) std::cerr << "[GY271Magnetometer] [I2C] Failed reading byte value from register: 0x" << std::hex << (int)(startReg + i) << std::endl;
             return false;
         }
         outputBuffer[i] = static_cast<uint8_t>(regValue & 0xFF);

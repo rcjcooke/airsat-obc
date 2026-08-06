@@ -9,7 +9,6 @@
 
 class GY271Magnetometer {
 public:
-
     // Magnetometer angular accuracy (datasheet says approx 1-2 degrees)
     static constexpr float kAccuracy = ONE_DEGREE_IN_RADIANS * 1.5f;
 
@@ -30,6 +29,8 @@ public:
     bool isCalibrated() const { return _isCalibrated; }
 
 private:
+    static constexpr bool kDebug = false;
+    
     bool writeRegister(uint8_t reg, uint8_t value);
     bool readRegisters(uint8_t startReg, uint8_t* outputBuffer, size_t length);
     bool readRawData(float& rx, float& ry, float& rz);

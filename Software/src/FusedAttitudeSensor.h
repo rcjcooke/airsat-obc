@@ -34,8 +34,10 @@ public:
 
     float getEstimatedAttitude() const;
     bool isSensorHealthy() const;
+    uint32_t getSensorFaultCount() const;
 
 private:
+    static constexpr bool kDebug = false;
     static constexpr uint32_t kFaultReestablishTimeoutMs = 5000;
 
     GY271Magnetometer _magSensor;
@@ -44,6 +46,7 @@ private:
     float _currentAttitude;
     bool _healthy;
     bool _faultActive;
+    uint32_t _sensorFaults;
     std::chrono::steady_clock::time_point _faultDetectedAt;
 
     bool readCurrentAttitude();

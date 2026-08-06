@@ -19,7 +19,7 @@ float Filters::filterOutChangesBelowAccuracy(float newValue, float existingValue
 
 FusedAttitudeSensor::FusedAttitudeSensor() 
     : _magSensor("/dev/i2c-1", 0x0D), _currentAttitude(0.0f), _healthy(false),
-      _faultActive(false), _faultDetectedAt(std::chrono::steady_clock::now()) {}
+      _faultActive(false), _faultDetectedAt(std::chrono::steady_clock::now()), _sensorFaults(0) {}
 
 bool FusedAttitudeSensor::init() {
     _healthy = _magSensor.init();
@@ -41,20 +41,21 @@ void FusedAttitudeSensor::update() {
     if (!_faultActive) {
         _faultActive = true;
         _faultDetectedAt = now;
-        std::cerr << "[FusedAttitudeSensor] Magnetometer communication fault detected. Attempting immediate reconnect..." << std::endl;
+        _sensorFaults++;
+        if (kDebug) std::cerr << "[FusedAttitudeSensor] Magnetometer communication fault detected. Attempting immediate reconnect..." << std::endl;
     }
 
     if (attemptReconnect() && readCurrentAttitude()) {
         _healthy = true;
         clearFaultState();
-        std::cerr << "[FusedAttitudeSensor] Magnetometer communication restored." << std::endl;
+        if (kDebug) std::cerr << "[FusedAttitudeSensor] Magnetometer communication restored." << std::endl;
         return;
     }
 
     const auto faultAgeMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - _faultDetectedAt).count();
     if (faultAgeMs >= kFaultReestablishTimeoutMs) {
         if (_healthy) {
-            std::cerr << "[FusedAttitudeSensor] Magnetometer fault timeout exceeded. Marking sensor unhealthy." << std::endl;
+            if (kDebug) std::cerr << "[FusedAttitudeSensor] Magnetometer fault timeout exceeded. Marking sensor unhealthy." << std::endl;
         }
         _healthy = false;
     } else {
@@ -85,6 +86,10 @@ bool FusedAttitudeSensor::attemptReconnect() {
 void FusedAttitudeSensor::clearFaultState() {
     _faultActive = false;
     _faultDetectedAt = std::chrono::steady_clock::now();
+}
+
+uint32_t FusedAttitudeSensor::getSensorFaultCount() const {
+    return _sensorFaults;
 }
 
 void FusedAttitudeSensor::requestCalibrationStart() {
