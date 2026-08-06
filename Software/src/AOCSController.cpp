@@ -10,40 +10,13 @@
 #include <wiringPi.h>
 #include <wiringPiSPI.h>
 
-#pragma pack(push, 1)
-struct CommandPayload {
-    float torque;
-    float thrust[4];
-    uint8_t flags;
-    uint8_t alignment_pad;
-}; // 22 bytes
-
-struct TelemetryPayload {
-    float momentum;
-    uint16_t propellant;
-    uint16_t error_count;
-    uint8_t padding[14]; // FIXED: Match the 14-byte array footprint
-}; // 22 bytes
-
-struct CommandFrame {
-    uint8_t sync[2];
-    CommandPayload payload;
-    uint16_t checksum;
-}; // 26 bytes
-
-struct TelemetryFrame {
-    uint8_t sync[2];
-    TelemetryPayload payload;
-    uint16_t checksum;
-}; // 26 bytes
-#pragma pack(pop)
-
+#include "AOCSPacketStructures.h"
 
 AOCSController::AOCSController(const std::string& device, uint32_t speedHz, int csGpioPin)
     : _devicePath(device), _speedHz(speedHz), _spiFd(-1), _csGpioPin(csGpioPin), _csGpioConfigured(false),
       _cachedMomentum(0.0f), _cachedPropellant(0), _cachedTeensyErrors(0),
-      _localRxErrors(0), _lastTransactionValid(false), _lastSentTorque(-999.0f) {
-          for (int i = 0; i < 4; ++i) _lastSentThrust[i] = -999.0f;
+      _localRxErrors(0), _lastTransactionValid(false), _lastSentTorque(0.0f) {
+          for (int i = 0; i < 4; ++i) _lastSentThrust[i] = 0.0f;
           _lastCommTime = std::chrono::steady_clock::now();
       }
 
@@ -234,7 +207,7 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
     if (rxFrame.sync[0] == 0xAA && rxFrame.sync[1] == 0x55) {
         uint16_t calculated = calculateFletcher16(reinterpret_cast<const uint8_t*>(&rxFrame), 24);
         if (calculated == rxFrame.checksum) {
-            _cachedMomentum     = rxFrame.payload.momentum;
+            _cachedMomentum     = rxFrame.payload.storedAngularMomentum;
             _cachedPropellant   = rxFrame.payload.propellant;
             _cachedTeensyErrors = rxFrame.payload.error_count;
             _lastTransactionValid = true;
