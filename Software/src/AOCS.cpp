@@ -9,6 +9,7 @@ AOCS::AOCS()
       _targetAttitudeRad(0.0f), _lastAttitudeRad(0.0f), _isFirstIteration(true),
       _hasReceivedAnyTelemetry(false) {
           _lastValidTelemetryTime = std::chrono::steady_clock::now();
+          _controlAlgorithm = ControlAlgorithm();
       }
 
 bool AOCS::init(bool runCalibration) {
@@ -38,9 +39,9 @@ void AOCS::setTargetAttitude(float targetRad) {
 }
 
 void AOCS::calibrateSensors(uint32_t durationMs) {
-    float alphaSat = PhysicsConstants::TOTAL_TARGET_RAD / 
-                     (PhysicsConstants::ACCEL_TIME_S * (PhysicsConstants::ACCEL_TIME_S + PhysicsConstants::COAST_TIME_S));
-    float targetTorqueNm = AirSatConstraints::SATELLITE_INERTIA * alphaSat;
+    float alphaSat = CalibrationProcess::TOTAL_TARGET_RAD / 
+                     (CalibrationProcess::ACCEL_TIME_S * (CalibrationProcess::ACCEL_TIME_S + CalibrationProcess::COAST_TIME_S));
+    float targetTorqueNm = ControlAlgorithm::AirSatConstraints::SATELLITE_INERTIA * alphaSat;
 
     _attitudeSensor.requestCalibrationStart();
     auto startTime = std::chrono::steady_clock::now();
@@ -53,11 +54,11 @@ void AOCS::calibrateSensors(uint32_t durationMs) {
     while ((elapsedSeconds * 1000.0f) < durationMs) {
         auto iterStart = std::chrono::steady_clock::now();
 
-        if (elapsedSeconds < PhysicsConstants::ACCEL_TIME_S) {
+        if (elapsedSeconds < CalibrationProcess::ACCEL_TIME_S) {
             currentCommandedTorque = targetTorqueNm;
-        } else if (elapsedSeconds < (PhysicsConstants::ACCEL_TIME_S + PhysicsConstants::COAST_TIME_S)) {
+        } else if (elapsedSeconds < (CalibrationProcess::ACCEL_TIME_S + CalibrationProcess::COAST_TIME_S)) {
             currentCommandedTorque = 0.0f;
-        } else if (elapsedSeconds < (PhysicsConstants::ACCEL_TIME_S + PhysicsConstants::COAST_TIME_S + PhysicsConstants::DECEL_TIME_S)) {
+        } else if (elapsedSeconds < (CalibrationProcess::ACCEL_TIME_S + CalibrationProcess::COAST_TIME_S + CalibrationProcess::DECEL_TIME_S)) {
             currentCommandedTorque = -targetTorqueNm;
         } else {
             currentCommandedTorque = 0.0f;
@@ -112,24 +113,12 @@ void AOCS::runIteration() {
     }
     _lastAttitudeRad = currentAttitude;
 
-    float headingError = _targetAttitudeRad - currentAttitude;
-    headingError = std::atan2(std::sin(headingError), std::cos(headingError));
-
-    float kp = AirSatConstraints::KP_GAIN;
-    float kd = 2.0f * std::sqrt(kp * AirSatConstraints::SATELLITE_INERTIA);
-    float requestedTorque = (kp * headingError) - (kd * satelliteVelocityRadS);
-
-    if (requestedTorque > AirSatConstraints::MAX_MOTOR_TORQUE)  requestedTorque = AirSatConstraints::MAX_MOTOR_TORQUE;
-    if (requestedTorque < -AirSatConstraints::MAX_MOTOR_TORQUE) requestedTorque = -AirSatConstraints::MAX_MOTOR_TORQUE;
-
-    float currentWheelMomentum = _controller.getLatestMomentum();
-    if (currentWheelMomentum >= AirSatConstraints::MAX_WHEEL_MOMENTUM && requestedTorque < 0.0f) requestedTorque = 0.0f;
-    if (currentWheelMomentum <= -AirSatConstraints::MAX_WHEEL_MOMENTUM && requestedTorque > 0.0f) requestedTorque = 0.0f;
-
-    float currentThrust[] = {0.0f, 0.0f, 0.0f, 0.0f};
+    ControlAlgorithm::ControlCommands commands = _controlAlgorithm.computeControlCommands(
+        currentAttitude, satelliteVelocityRadS, _controller.getLatestMomentum(), _controller.getLatestPropellant()
+    );
 
     // This returns true ONLY if a structurally integral validation handshake packet returns.
-    bool freshHandshakeReceived = _controller.updateActuators(requestedTorque, currentThrust);
+    bool freshHandshakeReceived = _controller.updateActuators(commands.torque, commands.thrust);
     
     if (freshHandshakeReceived) {
         _lastValidTelemetryTime = currentTime;
@@ -143,7 +132,7 @@ void AOCS::runIteration() {
     };
     
     std::cout << "[CONTROL LOOP] Target: " << radToDeg(_targetAttitudeRad) << "° | Current: " << radToDeg(currentAttitude) 
-              << "° | Torque: " << requestedTorque << " Nm" << std::endl;
+              << "° | Torque: " << commands.torque << " Nm" << std::endl;
               
     std::cout << "[BUS DIAGNOSTICS] Tx State: " << (_controller.isLastTransactionValid() ? "SUCCESS" : "BUS IDLE/DROP")
               << " | Pi Rx Drops: " << _controller.getLocalRxErrors()
@@ -156,3 +145,5 @@ void AOCS::runIteration() {
     }
     std::cout << "------------------------------------------------------------------------" << std::endl;
 }
+
+
