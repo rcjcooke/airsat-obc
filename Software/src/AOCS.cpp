@@ -9,16 +9,17 @@ AOCS::AOCS()
       _targetAttitudeRad(0.0f), _lastAttitudeRad(0.0f), _isFirstIteration(true),
       _hasReceivedAnyTelemetry(false) {
           _lastValidTelemetryTime = std::chrono::steady_clock::now();
+          _lastReportTime = _lastValidTelemetryTime;
           _controlAlgorithm = ControlAlgorithm();
       }
 
 bool AOCS::init(bool runCalibration) {
-    bool spiOk = _controller.init();
-    bool i2cOk = _attitudeSensor.init();
+    bool aocsControllerOk = _controller.init();
+    bool sensorsOk = _attitudeSensor.init();
     
-    if (!spiOk || !i2cOk) {
-        std::cerr << "[AOCS SYSTEM] Initialisation halted due to hardware bus failure: "
-                  << (!spiOk ? "SPI " : "") << (!i2cOk ? "I2C" : "") << std::endl;
+    if (!aocsControllerOk || !sensorsOk) {
+        std::cerr << "[AOCS SYSTEM] Initialisation failed: "
+                  << (!aocsControllerOk ? "AOCS CONTROLLER " : "") << (!sensorsOk ? "SENSORS" : "") << std::endl;
         return false;
     }
 
@@ -30,6 +31,7 @@ bool AOCS::init(bool runCalibration) {
     }
 
     _lastExecutionTime = std::chrono::steady_clock::now();
+    _lastReportTime = _lastExecutionTime;
     return true;
 }
 
@@ -65,7 +67,7 @@ void AOCS::calibrateSensors(uint32_t durationMs) {
         }
 
         // Capture returned handshake frames during calibration rotation sweeps
-        if (_controller.updateActuators(currentCommandedTorque, dummyThrusts)) {
+        if (_controller.sendNewCommand(currentCommandedTorque, dummyThrusts)) {
             _lastValidTelemetryTime = std::chrono::steady_clock::now();
             _hasReceivedAnyTelemetry = true;
         }
@@ -82,7 +84,7 @@ void AOCS::calibrateSensors(uint32_t durationMs) {
     }
 
     currentCommandedTorque = 0.0f;
-    _controller.updateActuators(currentCommandedTorque, dummyThrusts);
+    _controller.sendNewCommand(currentCommandedTorque, dummyThrusts);
     _attitudeSensor.requestCalibrationEnd();
 }
 
@@ -91,16 +93,25 @@ void AOCS::runIteration() {
     float dt = std::chrono::duration<float>(currentTime - _lastExecutionTime).count();
     _lastExecutionTime = currentTime;
 
+    // Make sure all the subsystems are doing their thing
     _attitudeSensor.update();
+    bool telemetryReceived = _controller.update();
+    if (telemetryReceived) {
+        _lastValidTelemetryTime = currentTime;
+        _hasReceivedAnyTelemetry = true;
+    }
+    
+    // Safety first...
     if (!_attitudeSensor.isSensorHealthy()) {
         float safeThrust[] = {0.0f, 0.0f, 0.0f, 0.0f};
-        _controller.updateActuators(0.0f, safeThrust);
-        return;
+        _controller.sendNewCommand(0.0f, safeThrust);
     }
 
+    // Update all the readings
     float currentAttitude = _attitudeSensor.getEstimatedAttitude();
     float satelliteVelocityRadS = 0.0f;
     if (!_isFirstIteration) {
+        // We need time to have passed to calculate a velocity
         if (dt > 0.00001f) {
             float delta = currentAttitude - _lastAttitudeRad;
             delta = std::atan2(std::sin(delta), std::cos(delta));
@@ -112,38 +123,41 @@ void AOCS::runIteration() {
         return; 
     }
     _lastAttitudeRad = currentAttitude;
+    float angularMomentum = _controller.getLatestMomentum();
+    float remainingPropellant = _controller.getLatestPropellant();
 
+    // Work out what to tell the actuators to do
     ControlAlgorithm::ControlCommands commands = _controlAlgorithm.computeControlCommands(
-        currentAttitude, satelliteVelocityRadS, _controller.getLatestMomentum(), _controller.getLatestPropellant()
+        currentAttitude, satelliteVelocityRadS, angularMomentum, remainingPropellant
     );
 
-    // This returns true ONLY if a structurally integral validation handshake packet returns.
-    bool freshHandshakeReceived = _controller.updateActuators(commands.torque, commands.thrust);
-    
-    if (freshHandshakeReceived) {
-        _lastValidTelemetryTime = currentTime;
-        _hasReceivedAnyTelemetry = true;
-    }
+    // Action the commands
+    _controller.sendNewCommand(commands.torque, commands.thrust);
 
-    float telemetryAgeSeconds = std::chrono::duration<float>(currentTime - _lastValidTelemetryTime).count();
+    // Do some reporting if it's that time again
+    if (currentTime - _lastReportTime >= REPORT_INTERVAL) {
+        _lastReportTime = currentTime;
 
-    auto radToDeg = [](double radians) -> double {
-        return radians * (180.0 / M_PI);
-    };
-    
-    std::cout << "[CONTROL LOOP] Target: " << radToDeg(_targetAttitudeRad) << "° | Current: " << radToDeg(currentAttitude) 
-              << "° | Torque: " << commands.torque << " Nm" << std::endl;
-              
-    std::cout << "[BUS DIAGNOSTICS] Tx State: " << (_controller.isLastTransactionValid() ? "SUCCESS" : "BUS IDLE/DROP")
-              << " | Pi Rx Drops: " << _controller.getLocalRxErrors()
-              << " | Teensy Rx Drops: " << _controller.getTeensyRxErrorCount();
-              
-    if (_hasReceivedAnyTelemetry) {
-        std::cout << " | Last Telem Received: " << telemetryAgeSeconds << "s ago" << std::endl;
-    } else {
-        std::cout << " | Last Telem Received: NEVER" << std::endl;
+        float telemetryAgeSeconds = std::chrono::duration<float>(currentTime - _lastValidTelemetryTime).count();
+
+        auto radToDeg = [](double radians) -> double {
+            return radians * (180.0 / M_PI);
+        };
+        
+        std::cout << "[CONTROL LOOP] Target: " << radToDeg(_targetAttitudeRad) << "° | Current: " << radToDeg(currentAttitude) 
+                  << "° | Torque: " << commands.torque << " Nm" << std::endl;
+                  
+        std::cout << "[AOCS Controller Link] Tx State: " << (_controller.isLastTransactionValid() ? "SUCCESS" : "BUS IDLE/DROP")
+                  << " | Pi Rx Drops: " << _controller.getLocalRxErrorCount()
+                  << " | Teensy Rx Drops: " << _controller.getTeensyRxErrorCount();
+                  
+        if (_hasReceivedAnyTelemetry) {
+            std::cout << " | Last Telem Received: " << telemetryAgeSeconds << "s ago" << std::endl;
+        } else {
+            std::cout << " | Last Telem Received: NEVER" << std::endl;
+        }
+        std::cout << "------------------------------------------------------------------------" << std::endl;
     }
-    std::cout << "------------------------------------------------------------------------" << std::endl;
 }
 
 

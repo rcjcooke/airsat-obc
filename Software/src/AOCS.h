@@ -8,6 +8,7 @@
 
 class AOCS {
 public:
+    static constexpr auto REPORT_INTERVAL = std::chrono::milliseconds(500);
 
     struct CalibrationProcess {
         static constexpr float TOTAL_TARGET_RAD  = 2.0f * 3.14159265f;
@@ -35,6 +36,7 @@ private:
     float _lastAttitudeRad;
     bool _isFirstIteration;
     std::chrono::steady_clock::time_point _lastExecutionTime;
+    std::chrono::steady_clock::time_point _lastReportTime;
 
     std::chrono::steady_clock::time_point _lastValidTelemetryTime;
     bool _hasReceivedAnyTelemetry;

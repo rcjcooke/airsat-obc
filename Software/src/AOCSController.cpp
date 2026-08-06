@@ -102,33 +102,38 @@ uint16_t AOCSController::calculateFletcher16(const uint8_t* data, size_t count) 
     return (sum2 << 8) | sum1;
 }
 
-bool AOCSController::updateActuators(float targetTorque, const float targetThrust[4]) {
+bool AOCSController::update() {
     auto now = std::chrono::steady_clock::now();
     uint32_t elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - _lastCommTime).count();
 
-    // 1. Evaluate Delta Changes
+    // Work out whether the command has meaningfully changed
     bool commandChanged = false;
-    if (std::abs(targetTorque - _lastSentTorque) > CommConstants::COMMAND_EPSILON) {
+    if (std::abs(_commandedTorque - _lastSentTorque) > CommConstants::COMMAND_EPSILON) {
         commandChanged = true;
     }
     for (int i = 0; i < 4; ++i) {
-        if (std::abs(targetThrust[i] - _lastSentThrust[i]) > CommConstants::COMMAND_EPSILON) {
+        if (std::abs(_commandedThrust[i] - _lastSentThrust[i]) > CommConstants::COMMAND_EPSILON) {
             commandChanged = true;
         }
     }
 
-    // 2. Decision Matrix Rule:
+    // Only send the command if the values have changed
     if (commandChanged) {
-        // Send a true Command Frame immediately
-        return executeFullDuplexTransfer(targetTorque, targetThrust, false);
+        return executeFullDuplexTransfer(_commandedTorque, _commandedThrust, false);
     } 
     else if (elapsedMs >= CommConstants::MIN_COMM_PERIOD_MS) {
         // No new command, but heartbeat interval hit: Send a NOP Telemetry Poll Frame
-        return executeFullDuplexTransfer(targetTorque, targetThrust, true);
+        return executeFullDuplexTransfer(_commandedTorque, _commandedThrust, true);
     }
 
     // Silence mode active: No bus transmission needed on this pass
     return false;
+}
+
+bool AOCSController::sendNewCommand(float targetTorque, const float targetThrust[4]) {
+    _commandedTorque = targetTorque;
+    std::memcpy(_commandedThrust, targetThrust, sizeof(_commandedThrust));
+    return update();
 }
 
 // Uncomment this line when testing with a physical loopback cable on the Pi pins.
@@ -156,7 +161,9 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
         std::cout << std::dec << std::endl;
     };
 
-    logRawFrame("[SPI TRANSMIT] Outbound Frame Hex Dump: ", reinterpret_cast<const uint8_t*>(&txFrame), sizeof(CommandFrame));
+    if (CommConstants::DEBUG) {
+        logRawFrame("[SPI TRANSMIT] Outbound Frame Hex Dump: ", reinterpret_cast<const uint8_t*>(&txFrame), sizeof(CommandFrame));
+    }
 
     unsigned char txrxBuffer[sizeof(CommandFrame)];
     std::memcpy(txrxBuffer, &txFrame, sizeof(txFrame));
@@ -178,7 +185,9 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
         return false;
     }
 
-    logRawFrame("[SPI RECEIVE] Loopback Frame Hex Dump:", txrxBuffer, sizeof(txrxBuffer));
+    if (CommConstants::DEBUG) {
+        logRawFrame("[SPI RECEIVE] Loopback Frame Hex Dump:", txrxBuffer, sizeof(txrxBuffer));
+    }
     usleep(1000);
     setCsState(true);
 
@@ -213,7 +222,9 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
         return false;
     }
 
-    logRawFrame("[SPI RECEIVE] Inbound Frame Hex Dump:   ", txrxBuffer, sizeof(txrxBuffer));
+    if (CommConstants::DEBUG) {
+        logRawFrame("[SPI RECEIVE] Inbound Frame Hex Dump:   ", txrxBuffer, sizeof(txrxBuffer));
+    }
     // usleep(1000);
     // setCsState(true);
 
@@ -245,5 +256,5 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
 float AOCSController::getLatestMomentum() const       { return _cachedMomentum; }
 uint16_t AOCSController::getLatestPropellant() const   { return _cachedPropellant; }
 uint16_t AOCSController::getTeensyRxErrorCount() const { return _cachedTeensyErrors; }
-uint32_t AOCSController::getLocalRxErrors() const     { return _localRxErrors; }
+uint32_t AOCSController::getLocalRxErrorCount() const     { return _localRxErrors; }
 bool AOCSController::isLastTransactionValid() const    { return _lastTransactionValid; }

@@ -11,6 +11,7 @@ public:
         // Minimum frequency to request updates from Teensy (200ms = 5Hz)
         static constexpr uint32_t MIN_COMM_PERIOD_MS = 200; 
         static constexpr float COMMAND_EPSILON       = 0.00001f;
+        static constexpr bool DEBUG = false;
     };
 
     AOCSController(const std::string& device = "/dev/spidev0.0", uint32_t speedHz = 2000000, int csGpioPin = 17);
@@ -20,12 +21,13 @@ public:
     void closeConnection();
     
     // Core Interface: Automatically determines if a write is a Command delta or a NOP telemetry poll
-    bool updateActuators(float targetTorque, const float targetThrust[4]);
+    bool update();
+    bool sendNewCommand(float targetTorque, const float targetThrust[4]);
     
     float getLatestMomentum() const;
     uint16_t getLatestPropellant() const;
     uint16_t getTeensyRxErrorCount() const;
-    uint32_t getLocalRxErrors() const;
+    uint32_t getLocalRxErrorCount() const;
     bool isLastTransactionValid() const;
 
 private:
@@ -34,6 +36,10 @@ private:
     int _spiFd;
     int _csGpioPin;
     bool _csGpioConfigured;
+
+    // The commanded values that are sent to the AOCS Hardware
+    float _commandedTorque;
+    float _commandedThrust[4];
     
     // Cache variables
     float _cachedMomentum;
