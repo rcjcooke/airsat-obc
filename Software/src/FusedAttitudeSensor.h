@@ -2,6 +2,7 @@
 #define FUSED_ATTITUDE_SENSOR_H
 
 #include "GY271Magnetometer.h"
+#include <chrono>
 
 namespace Filters {
     // Placeholder for future sensor fusion algorithms (e.g., Kalman Filter, Complementary Filter)
@@ -35,11 +36,19 @@ public:
     bool isSensorHealthy() const;
 
 private:
+    static constexpr uint32_t kFaultReestablishTimeoutMs = 5000;
+
     GY271Magnetometer _magSensor;
     // Future expansion sensors (e.g., IMU MPU6050, StarTracker, etc.) can be placed cleanly here
     
     float _currentAttitude;
     bool _healthy;
+    bool _faultActive;
+    std::chrono::steady_clock::time_point _faultDetectedAt;
+
+    bool readCurrentAttitude();
+    bool attemptReconnect();
+    void clearFaultState();
 };
 
 #endif

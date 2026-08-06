@@ -18,24 +18,73 @@ float Filters::filterOutChangesBelowAccuracy(float newValue, float existingValue
 // FusedAttitudeSensor Implementation
 
 FusedAttitudeSensor::FusedAttitudeSensor() 
-    : _magSensor("/dev/i2c-1", 0x0D), _currentAttitude(0.0f), _healthy(false) {}
+    : _magSensor("/dev/i2c-1", 0x0D), _currentAttitude(0.0f), _healthy(false),
+      _faultActive(false), _faultDetectedAt(std::chrono::steady_clock::now()) {}
 
 bool FusedAttitudeSensor::init() {
     _healthy = _magSensor.init();
+    if (_healthy) {
+        clearFaultState();
+    }
     return _healthy;
 }
 
 void FusedAttitudeSensor::update() {
-    if (!_healthy) return;
+    auto now = std::chrono::steady_clock::now();
 
-    float mx = 0.0f, my = 0.0f, mz = 0.0f;
-    if (_magSensor.readMagneticField(mx, my, mz)) {
-        const float rawAttitude = std::atan2(my, mx);
-        // Filter out sensor accuracy noise
-        _currentAttitude = Filters::filterOutChangesBelowAccuracy(rawAttitude, _currentAttitude, GY271Magnetometer::kAccuracy);
-    } else {
-        _healthy = false;
+    if (readCurrentAttitude()) {
+        _healthy = true;
+        clearFaultState();
+        return;
     }
+
+    if (!_faultActive) {
+        _faultActive = true;
+        _faultDetectedAt = now;
+        std::cerr << "[FusedAttitudeSensor] Magnetometer communication fault detected. Attempting immediate reconnect..." << std::endl;
+    }
+
+    if (attemptReconnect() && readCurrentAttitude()) {
+        _healthy = true;
+        clearFaultState();
+        std::cerr << "[FusedAttitudeSensor] Magnetometer communication restored." << std::endl;
+        return;
+    }
+
+    const auto faultAgeMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - _faultDetectedAt).count();
+    if (faultAgeMs >= kFaultReestablishTimeoutMs) {
+        if (_healthy) {
+            std::cerr << "[FusedAttitudeSensor] Magnetometer fault timeout exceeded. Marking sensor unhealthy." << std::endl;
+        }
+        _healthy = false;
+    } else {
+        _healthy = true;
+    }
+}
+
+bool FusedAttitudeSensor::readCurrentAttitude() {
+    float mx = 0.0f;
+    float my = 0.0f;
+    float mz = 0.0f;
+    if (!_magSensor.readMagneticField(mx, my, mz)) {
+        return false;
+    }
+
+    const float rawAttitude = std::atan2(my, mx);
+    // Filter out sensor accuracy noise
+    _currentAttitude = Filters::filterOutChangesBelowAccuracy(rawAttitude, _currentAttitude, GY271Magnetometer::kAccuracy);
+    (void)mz;
+    return true;
+}
+
+bool FusedAttitudeSensor::attemptReconnect() {
+    _magSensor.closeDevice();
+    return _magSensor.init();
+}
+
+void FusedAttitudeSensor::clearFaultState() {
+    _faultActive = false;
+    _faultDetectedAt = std::chrono::steady_clock::now();
 }
 
 void FusedAttitudeSensor::requestCalibrationStart() {
