@@ -144,9 +144,16 @@ void AOCS::runIteration() {
             return radians * (180.0 / M_PI);
         };
         
-        std::cout << "[CONTROL LOOP] Target: " << radToDeg(_targetAttitudeRad) << "° | Current: " << radToDeg(currentAttitude) 
-                  << "° | Torque: " << commands.torque << " Nm" << std::endl;
+        std::cout << "[SENSORS STATUS] Health: " << (_attitudeSensor.isSensorHealthy() ? "OK" : "FAULT") 
+                  << " | Faults: " << _attitudeSensor.getSensorFaultCount() << std::endl;
+
+        std::cout << "[SENSORS] Attitude: " << radToDeg(currentAttitude) << "° | Angular Velocity: " << radToDeg(satelliteVelocityRadS) << "°/s" 
+                  << " | Momentum: " << angularMomentum << " kg*m^2/s"
+                  << " | Remaining Propellant: " << remainingPropellant << " kg" << std::endl;
+        
+        std::cout << "[CONTROL LOOP] Target: " << radToDeg(_targetAttitudeRad) << "° | Torque: " << commands.torque << " Nm" << std::endl;
                   
+
         std::cout << "[AOCS Controller Link] Tx State: " << (_controller.isLastTransactionValid() ? "SUCCESS" : "BUS IDLE/DROP")
                   << " | Pi Rx Drops: " << _controller.getLocalRxErrorCount()
                   << " | Teensy Rx Drops: " << _controller.getTeensyRxErrorCount();
