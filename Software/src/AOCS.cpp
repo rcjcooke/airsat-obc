@@ -153,7 +153,7 @@ void AOCS::runIteration() {
                   << " | Faults: " << _attitudeSensor.getSensorFaultCount() << std::endl;
 
         std::cout << "[SENSORS] Attitude: " << radToDeg(airsatAttitudeRad) << "° | Angular Velocity: " << radToDeg(airsatAngularVelocityRadS) << "°/s" 
-                  << " | Momentum: " << angularMomentum << " kg*m^2/s"
+                  << " | Momentum: " << angularMomentum << " kg.m²/s"
                   << " | Remaining Propellant: " << remainingPropellant << " kg" << std::endl;
         
         std::cout << "[CONTROL LOOP] Target Attitude: " << radToDeg(_targetAttitudeRad) << "° | Commanded Torque: " << commands.torque << " Nm" << std::endl;
