@@ -47,7 +47,7 @@ private:
     bool _healthy;
     bool _faultActive;
     std::chrono::steady_clock::time_point _faultDetectedAt;
-    uint32_t _sensorFaults;
+    uint32_t _sensorFaultsCount;
 
     bool readCurrentAttitude();
     bool attemptReconnect();

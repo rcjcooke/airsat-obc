@@ -1,5 +1,5 @@
-#ifndef PACKET_STRUCTURES_H
-#define PACKET_STRUCTURES_H
+#ifndef AOCS_PACKET_STRUCTURES_H
+#define AOCS_PACKET_STRUCTURES_H
 
 #include <cstdint>
 
@@ -31,4 +31,4 @@ struct TelemetryFrame {
 }; // 26 bytes
 #pragma pack(pop)
 
-#endif
+#endif // AOCS_PACKET_STRUCTURES_H

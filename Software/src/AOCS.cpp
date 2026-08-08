@@ -20,6 +20,11 @@ bool AOCS::init(bool runCalibration) {
     if (!aocsControllerOk || !sensorsOk) {
         std::cerr << "[AOCS SYSTEM] Initialisation failed: "
                   << (!aocsControllerOk ? "AOCS CONTROLLER " : "") << (!sensorsOk ? "SENSORS" : "") << std::endl;
+        if (!sensorsOk) {
+            // For now, we know that the only error that could prevent initialisation is the following.
+            // TODO improve on this with fault codes etc. as more sensors are added.
+            std::cerr << "[AOCS SYSTEM] Couldn't establish I2C link to Magnetometer." << std::endl;
+        }
         return false;
     }
 

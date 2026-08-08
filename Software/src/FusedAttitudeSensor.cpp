@@ -19,7 +19,7 @@ float Filters::filterOutChangesBelowAccuracy(float newValue, float existingValue
 
 FusedAttitudeSensor::FusedAttitudeSensor() 
     : _magSensor("/dev/i2c-1", 0x0D), _currentAttitude(0.0f), _healthy(false),
-      _faultActive(false), _faultDetectedAt(std::chrono::steady_clock::now()), _sensorFaults(0) {}
+      _faultActive(false), _faultDetectedAt(std::chrono::steady_clock::now()), _sensorFaultsCount(0) {}
 
 bool FusedAttitudeSensor::init() {
     _healthy = _magSensor.init();
@@ -41,7 +41,7 @@ void FusedAttitudeSensor::update() {
     if (!_faultActive) {
         _faultActive = true;
         _faultDetectedAt = now;
-        _sensorFaults++;
+        _sensorFaultsCount++;
         if (kDebug) std::cerr << "[FusedAttitudeSensor] Magnetometer communication fault detected. Attempting immediate reconnect..." << std::endl;
     }
 
@@ -89,7 +89,7 @@ void FusedAttitudeSensor::clearFaultState() {
 }
 
 uint32_t FusedAttitudeSensor::getSensorFaultCount() const {
-    return _sensorFaults;
+    return _sensorFaultsCount;
 }
 
 void FusedAttitudeSensor::requestCalibrationStart() {
