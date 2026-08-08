@@ -113,27 +113,27 @@ void AOCS::runIteration() {
     }
 
     // Update all the readings
-    float currentAttitude = _attitudeSensor.getEstimatedAttitude();
-    float satelliteVelocityRadS = 0.0f;
+    float airsatAttitudeRad = _attitudeSensor.getEstimatedAttitude();
+    float airsatAngularVelocityRadS = 0.0f;
     if (!_isFirstIteration) {
         // We need time to have passed to calculate a velocity
         if (dt > 0.00001f) {
-            float delta = currentAttitude - _lastAttitudeRad;
+            float delta = airsatAttitudeRad - _lastAttitudeRad;
             delta = std::atan2(std::sin(delta), std::cos(delta));
-            satelliteVelocityRadS = delta / dt; 
+            airsatAngularVelocityRadS = delta / dt; 
         }
     } else {
         _isFirstIteration = false;
-        _lastAttitudeRad = currentAttitude;
+        _lastAttitudeRad = airsatAttitudeRad;
         return; 
     }
-    _lastAttitudeRad = currentAttitude;
+    _lastAttitudeRad = airsatAttitudeRad;
     float angularMomentum = _controller.getLatestMomentum();
     float remainingPropellant = _controller.getLatestPropellant();
 
     // Work out what to tell the actuators to do
     ControlAlgorithm::ControlCommands commands = _controlAlgorithm.computeControlCommands(
-        currentAttitude, satelliteVelocityRadS, angularMomentum, remainingPropellant
+        _targetAttitudeRad, airsatAttitudeRad, airsatAngularVelocityRadS, angularMomentum, remainingPropellant
     );
 
     // Action the commands
@@ -152,11 +152,11 @@ void AOCS::runIteration() {
         std::cout << "[SENSORS STATUS] Health: " << (_attitudeSensor.isSensorHealthy() ? "OK" : "FAULT") 
                   << " | Faults: " << _attitudeSensor.getSensorFaultCount() << std::endl;
 
-        std::cout << "[SENSORS] Attitude: " << radToDeg(currentAttitude) << "° | Angular Velocity: " << radToDeg(satelliteVelocityRadS) << "°/s" 
+        std::cout << "[SENSORS] Attitude: " << radToDeg(airsatAttitudeRad) << "° | Angular Velocity: " << radToDeg(airsatAngularVelocityRadS) << "°/s" 
                   << " | Momentum: " << angularMomentum << " kg*m^2/s"
                   << " | Remaining Propellant: " << remainingPropellant << " kg" << std::endl;
         
-        std::cout << "[CONTROL LOOP] Target: " << radToDeg(_targetAttitudeRad) << "° | Torque: " << commands.torque << " Nm" << std::endl;
+        std::cout << "[CONTROL LOOP] Target Attitude: " << radToDeg(_targetAttitudeRad) << "° | Commanded Torque: " << commands.torque << " Nm" << std::endl;
                   
 
         std::cout << "[AOCS Controller Link] Tx State: " << (_controller.isLastTransactionValid() ? "SUCCESS" : "BUS IDLE/DROP")

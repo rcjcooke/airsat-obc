@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-ControlAlgorithm::ControlCommands ControlAlgorithm::computeControlCommands(float attitudeRad, float angularVelocityRadS, float storedMomentumKgMMS, float remainingPropellantMMM) {
+ControlAlgorithm::ControlCommands ControlAlgorithm::computeControlCommands(float targetAttitudeRad, float attitudeRad, float angularVelocityRadS, float storedMomentumKgMMS, float remainingPropellantMMM) {
   (void)remainingPropellantMMM; // Parameter unused for now
   ControlCommands commands;
     
@@ -11,7 +11,7 @@ ControlAlgorithm::ControlCommands ControlAlgorithm::computeControlCommands(float
   float kd = 2.0f * std::sqrt(kp * AirSatConstraints::SATELLITE_INERTIA); // Derivative gain based on critical damping for a second-order system
   
   // Calculate heading error
-  float headingError = std::atan2(std::sin(attitudeRad), std::cos(attitudeRad)); // Assuming target attitude is 0 wrt the magnetic field reference frame
+  float headingError = std::atan2(std::sin(targetAttitudeRad - attitudeRad), std::cos(targetAttitudeRad - attitudeRad));
   
   // Compute requested torque using PD control
   float requestedTorque = (kp * headingError) - (kd * angularVelocityRadS);

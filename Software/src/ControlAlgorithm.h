@@ -14,7 +14,7 @@ public:
         float thrust[4]; // Thrust commands for 4 thrusters (N)
     };
 
-    static ControlCommands computeControlCommands(float attitudeRad, float angularVelocityRadS, float storedMomentumKgMMS, float remainingPropellantMMM);
+    static ControlCommands computeControlCommands(float targetAttitudeRad,float attitudeRad, float angularVelocityRadS, float storedMomentumKgMMS, float remainingPropellantMMM);
 };
 
 #endif // CONTROL_ALGORITHM_H
