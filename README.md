@@ -27,6 +27,15 @@ To install on a Raspberry Pi:
 - Build the OBC
   - `mkdir -p build && cd build && cmake .. && make -j$(nproc)`
 
+## Optional
+To set the OBC to start automatically when the Raspberry Pi starts up (highly recommended!):
+
+- Copy the `obc.service` file to `/lib/systemd/system/`. 
+  - Note: You'll need to change the `ExecStart` path to reflect the location you've installed the obc.
+- Run `sudo systemctl daemon-reload` to get the system to find it
+- Run `sudo systemctl enable obc.service` to enable it.
+- Run `sudo reboot` to restart the system and test that it did in fact start up on boot!
+
 # Usage
 Run it from the `Software/build/` directory.
 
@@ -36,4 +45,5 @@ Command line options:
 
 - `--skip-cal` - Skips the calibration phase during startup
 
+If you've set it up to run as a service, then you can view the logs at `Software/obc.log`. e.g. `tail -f ~/obc/Software/obc.log`
 
