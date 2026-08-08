@@ -41,6 +41,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << "OBC AOCS Subsystem Handshake Successful. Entering flight loop." << std::endl;
 
+    // Random target attitude set for now, this will be updated by the guidance system in future iterations
     aocsSubsystem.setTargetAttitude(1.5f);
 
     const auto loopPeriod = std::chrono::milliseconds(100);
