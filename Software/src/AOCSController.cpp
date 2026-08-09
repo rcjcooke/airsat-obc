@@ -23,16 +23,6 @@ AOCSController::AOCSController(const std::string& device, uint32_t speedHz, int 
 AOCSController::~AOCSController() { closeConnection(); }
 
 bool AOCSController::init() {
-    // if (wiringPiSetupGpio() < 0) {
-    //     std::cerr << "[SPI] Failed to initialise WiringPi GPIO access" << std::endl;
-    //     return false;
-    // }
-
-    // if (!configureCsGpio()) {
-    //     std::cerr << "[SPI] Failed to configure dedicated chip-select GPIO " << _csGpioPin << std::endl;
-    //     return false;
-    // }
-
     _spiFd = wiringPiSPISetup(0, _speedHz);
     if (_spiFd < 0) {
         std::cerr << "[SPI] Failed to open WiringPi SPI device" << std::endl;
@@ -186,9 +176,7 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
     // ------------------------------------------------------------------------
     // PATH B: STANDARD PRODUCTION MODE (Connected to Teensy)
     // ------------------------------------------------------------------------
-    // setCsState(false);
-    // usleep(1000);
-    
+
     // txrxBuffer gets overwritten with receive data in transfer
     if (wiringPiSPIDataRW(0, txrxBuffer, sizeof(txrxBuffer)) < 0) { 
         _lastTransactionValid = false;
@@ -198,8 +186,6 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
     if (CommConstants::DEBUG) {
         logRawFrame("[SPI RECEIVE] Inbound Frame Hex Dump:   ", txrxBuffer, sizeof(txrxBuffer));
     }
-    // usleep(1000);
-    // setCsState(true);
 
     TelemetryFrame rxFrame;
     std::memcpy(&rxFrame, txrxBuffer, sizeof(TelemetryFrame));
