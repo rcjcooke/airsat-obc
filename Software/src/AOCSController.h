@@ -11,7 +11,7 @@ public:
         // Minimum frequency to request updates from Teensy (200ms = 5Hz)
         static constexpr uint32_t MIN_COMM_PERIOD_MS = 200; 
         static constexpr float COMMAND_EPSILON       = 0.00001f;
-        static constexpr bool DEBUG = false;
+        static constexpr bool DEBUG = true;
     };
 
     AOCSController(const std::string& device = "/dev/spidev0.0", uint32_t speedHz = 2000000, int csGpioPin = 17);
