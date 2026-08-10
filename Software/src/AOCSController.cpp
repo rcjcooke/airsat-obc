@@ -23,11 +23,29 @@ AOCSController::AOCSController(const std::string& device, uint32_t speedHz, int 
 AOCSController::~AOCSController() { closeConnection(); }
 
 bool AOCSController::init() {
-    _spiFd = wiringPiSPISetup(0, _speedHz);
+    _spiFd = wiringPiSPISetupMode(0, _speedHz, SPI_MODE_0);
     if (_spiFd < 0) {
         std::cerr << "[SPI] Failed to open WiringPi SPI device" << std::endl;
         return false;
     }
+
+    // Set and check the SPI parameters explicitly using ioctl to ensure they are set correctly
+    uint8_t mode = SPI_MODE_0;
+    if (ioctl(_spiFd, SPI_IOC_WR_MODE, &mode) < 0) { return false; }
+    if (ioctl(_spiFd, SPI_IOC_RD_MODE, &mode) < 0) { return false; }
+
+    uint8_t bits = 8;
+    if (ioctl(_spiFd, SPI_IOC_WR_BITS_PER_WORD, &bits) < 0) { return false; }
+    if (ioctl(_spiFd, SPI_IOC_RD_BITS_PER_WORD, &bits) < 0) { return false; }
+
+    uint32_t speed = _speedHz;
+    if (ioctl(_spiFd, SPI_IOC_WR_MAX_SPEED_HZ, &speed) < 0) { return false; }
+    if (ioctl(_spiFd, SPI_IOC_RD_MAX_SPEED_HZ, &speed) < 0) { return false; }
+
+    std::cout << "[SPI] mode=" << (int)mode
+    << " bits=" << (int)bits
+    << " speed=" << speed << std::endl;
+
     return true;
 }
 
