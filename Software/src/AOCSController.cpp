@@ -111,10 +111,9 @@ bool AOCSController::update() {
     return false;
 }
 
-bool AOCSController::sendNewCommand(float targetTorque, const float targetThrust[4]) {
+void AOCSController::sendNewCommand(float targetTorque, const float targetThrust[4]) {
     _commandedTorque = targetTorque;
     std::memcpy(_commandedThrust, targetThrust, sizeof(_commandedThrust));
-    return update();
 }
 
 // Uncomment this line when testing with a physical loopback cable on the Pi pins.

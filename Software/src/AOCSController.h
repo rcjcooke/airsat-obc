@@ -22,7 +22,7 @@ public:
     
     // Core Interface: Automatically determines if a write is a Command delta or a NOP telemetry poll
     bool update();
-    bool sendNewCommand(float targetTorque, const float targetThrust[4]);
+    void sendNewCommand(float targetTorque, const float targetThrust[4]);
     
     float getLatestMomentum() const;
     uint16_t getLatestPropellant() const;

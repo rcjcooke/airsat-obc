@@ -72,7 +72,8 @@ void AOCS::calibrateSensors(uint32_t durationMs) {
         }
 
         // Capture returned handshake frames during calibration rotation sweeps
-        if (_controller.sendNewCommand(currentCommandedTorque, dummyThrusts)) {
+        _controller.sendNewCommand(currentCommandedTorque, dummyThrusts);
+        if (_controller.update()) {
             _lastValidTelemetryTime = std::chrono::steady_clock::now();
             _hasReceivedAnyTelemetry = true;
         }
