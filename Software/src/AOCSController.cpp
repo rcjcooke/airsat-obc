@@ -15,7 +15,7 @@
 AOCSController::AOCSController(const std::string& device, uint32_t speedHz, int csGpioPin)
     : _devicePath(device), _speedHz(speedHz), _spiFd(-1), _csGpioPin(csGpioPin), _csGpioConfigured(false),
       _cachedMomentum(0.0f), _cachedPropellant(0), _cachedTeensyErrors(0),
-      _localRxErrors(0), _lastTransactionValid(false), _lastSentTorque(0.0f) {
+      _localRxErrors(0), _lastTransactionValid(false), _rxStreamBuffer{}, _rxStreamSize(0), _lastSentTorque(0.0f) {
           for (int i = 0; i < 4; ++i) _lastSentThrust[i] = 0.0f;
           _lastCommTime = std::chrono::steady_clock::now();
       }
@@ -83,6 +83,66 @@ uint16_t AOCSController::calculateFletcher16(const uint8_t* data, size_t count) 
     return (sum2 << 8) | sum1;
 }
 
+void AOCSController::appendRxBytes(const uint8_t* data, std::size_t count) {
+    if (data == nullptr || count == 0) {
+        return;
+    }
+
+    if (count >= _rxStreamBuffer.size()) {
+        std::memcpy(_rxStreamBuffer.data(), data + count - _rxStreamBuffer.size(), _rxStreamBuffer.size());
+        _rxStreamSize = _rxStreamBuffer.size();
+        return;
+    }
+
+    if (_rxStreamSize + count > _rxStreamBuffer.size()) {
+        const std::size_t overflow = (_rxStreamSize + count) - _rxStreamBuffer.size();
+        std::memmove(_rxStreamBuffer.data(), _rxStreamBuffer.data() + overflow, _rxStreamSize - overflow);
+        _rxStreamSize -= overflow;
+    }
+
+    std::memcpy(_rxStreamBuffer.data() + _rxStreamSize, data, count);
+    _rxStreamSize += count;
+}
+
+bool AOCSController::tryConsumeTelemetryFrame(TelemetryFrame* frame) {
+    if (frame == nullptr || _rxStreamSize < AOCSPacketConstants::kFrameSize) {
+        return false;
+    }
+
+    for (std::size_t start = 0; start + AOCSPacketConstants::kFrameSize <= _rxStreamSize; ++start) {
+        if (_rxStreamBuffer[start] != AOCSPacketConstants::kSyncByte0 ||
+            _rxStreamBuffer[start + 1] != AOCSPacketConstants::kSyncByte1) {
+            continue;
+        }
+
+        TelemetryFrame candidate;
+        std::memcpy(&candidate, _rxStreamBuffer.data() + start, sizeof(candidate));
+        const uint16_t calculated = calculateFletcher16(
+            reinterpret_cast<const uint8_t*>(&candidate),
+            AOCSPacketConstants::kFrameSize - AOCSPacketConstants::kChecksumSize);
+
+        if (calculated == candidate.checksum) {
+            *frame = candidate;
+
+            const std::size_t consumed = start + AOCSPacketConstants::kFrameSize;
+            const std::size_t remaining = _rxStreamSize - consumed;
+            if (remaining > 0) {
+                std::memmove(_rxStreamBuffer.data(), _rxStreamBuffer.data() + consumed, remaining);
+            }
+            _rxStreamSize = remaining;
+            return true;
+        }
+    }
+
+    if (_rxStreamSize >= AOCSPacketConstants::kFrameSize) {
+        const std::size_t retained = AOCSPacketConstants::kFrameSize - 1;
+        std::memmove(_rxStreamBuffer.data(), _rxStreamBuffer.data() + (_rxStreamSize - retained), retained);
+        _rxStreamSize = retained;
+    }
+
+    return false;
+}
+
 bool AOCSController::update() {
     auto now = std::chrono::steady_clock::now();
     uint32_t elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - _lastCommTime).count();
@@ -124,13 +184,15 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
 
     // 1. Pack the operational command frame exactly like production
     CommandFrame txFrame;
-    txFrame.sync[0] = 0xAA; 
-    txFrame.sync[1] = 0x55;
+    txFrame.sync[0] = AOCSPacketConstants::kSyncByte0;
+    txFrame.sync[1] = AOCSPacketConstants::kSyncByte1;
     txFrame.payload.torque = torque;
     std::memcpy(txFrame.payload.thrust, thrust, sizeof(txFrame.payload.thrust));
     txFrame.payload.flags = isNop ? 0x22 : 0x11;
     txFrame.payload.alignment_pad = 0x00;
-    txFrame.checksum = calculateFletcher16(reinterpret_cast<const uint8_t*>(&txFrame), 24);
+    txFrame.checksum = calculateFletcher16(
+        reinterpret_cast<const uint8_t*>(&txFrame),
+        AOCSPacketConstants::kFrameSize - AOCSPacketConstants::kChecksumSize);
 
     auto logRawFrame = [](const char* label, const uint8_t* bytes, size_t count) {
         std::cout << label << " ";
@@ -145,7 +207,7 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
         logRawFrame("[SPI TRANSMIT] Outbound Frame Hex Dump: ", reinterpret_cast<const uint8_t*>(&txFrame), sizeof(CommandFrame));
     }
 
-    unsigned char txrxBuffer[sizeof(CommandFrame)];
+    unsigned char txrxBuffer[AOCSPacketConstants::kFrameSize];
     std::memcpy(txrxBuffer, &txFrame, sizeof(txFrame));
 
     _lastCommTime = std::chrono::steady_clock::now();
@@ -204,23 +266,20 @@ bool AOCSController::executeFullDuplexTransfer(float torque, const float thrust[
         logRawFrame("[SPI RECEIVE] Inbound Frame Hex Dump:   ", txrxBuffer, sizeof(txrxBuffer));
     }
 
+    appendRxBytes(txrxBuffer, sizeof(txrxBuffer));
+
     TelemetryFrame rxFrame;
-    std::memcpy(&rxFrame, txrxBuffer, sizeof(TelemetryFrame));
+    if (tryConsumeTelemetryFrame(&rxFrame)) {
+        _cachedMomentum     = rxFrame.payload.storedAngularMomentum;
+        _cachedPropellant   = rxFrame.payload.propellant;
+        _cachedTeensyErrors = rxFrame.payload.error_count;
+        _lastTransactionValid = true;
 
-    if (rxFrame.sync[0] == 0xAA && rxFrame.sync[1] == 0x55) {
-        uint16_t calculated = calculateFletcher16(reinterpret_cast<const uint8_t*>(&rxFrame), 24);
-        if (calculated == rxFrame.checksum) {
-            _cachedMomentum     = rxFrame.payload.storedAngularMomentum;
-            _cachedPropellant   = rxFrame.payload.propellant;
-            _cachedTeensyErrors = rxFrame.payload.error_count;
-            _lastTransactionValid = true;
-
-            if (!isNop) {
-                _lastSentTorque = torque;
-                std::memcpy(_lastSentThrust, thrust, sizeof(_lastSentThrust));
-            }
-            return true;
+        if (!isNop) {
+            _lastSentTorque = torque;
+            std::memcpy(_lastSentThrust, thrust, sizeof(_lastSentThrust));
         }
+        return true;
     }
 #endif
 

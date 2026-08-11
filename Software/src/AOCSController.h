@@ -4,6 +4,9 @@
 #include <string>
 #include <cstdint>
 #include <chrono>
+#include <array>
+
+#include "AOCSPacketStructures.h"
 
 class AOCSController {
 public:
@@ -12,9 +15,13 @@ public:
         static constexpr uint32_t MIN_COMM_PERIOD_MS = 200; 
         static constexpr float COMMAND_EPSILON       = 0.00001f;
         static constexpr bool DEBUG = true;
+        static constexpr uint32_t DEFAULT_SPI_SPEED_HZ = 50000;
+        static constexpr std::size_t RX_STREAM_BUFFER_SIZE = AOCSPacketConstants::kFrameSize * 4;
     };
 
-    AOCSController(const std::string& device = "/dev/spidev0.0", uint32_t speedHz = 2000000, int csGpioPin = 17);
+    AOCSController(const std::string& device = "/dev/spidev0.0",
+                   uint32_t speedHz = CommConstants::DEFAULT_SPI_SPEED_HZ,
+                   int csGpioPin = 17);
     ~AOCSController();
 
     bool init();
@@ -47,6 +54,8 @@ private:
     uint16_t _cachedTeensyErrors;
     uint32_t _localRxErrors;
     bool _lastTransactionValid;
+    std::array<uint8_t, CommConstants::RX_STREAM_BUFFER_SIZE> _rxStreamBuffer;
+    std::size_t _rxStreamSize;
 
     // Change detection state engine
     float _lastSentTorque;
@@ -56,6 +65,8 @@ private:
     uint16_t calculateFletcher16(const uint8_t* data, size_t count);
     bool configureCsGpio();
     void setCsState(bool asserted);
+    void appendRxBytes(const uint8_t* data, std::size_t count);
+    bool tryConsumeTelemetryFrame(TelemetryFrame* frame);
     bool executeFullDuplexTransfer(float torque, const float thrust[4], bool isNop);
 };
 
