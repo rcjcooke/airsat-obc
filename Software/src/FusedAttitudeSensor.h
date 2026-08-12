@@ -2,6 +2,7 @@
 #define FUSED_ATTITUDE_SENSOR_H
 
 #include "GY271Magnetometer.h"
+#include "FakeMagnetometer.h"
 #include <chrono>
 
 namespace Filters {
@@ -20,8 +21,21 @@ namespace Filters {
     float filterOutChangesBelowAccuracy(float newValue, float existingValue, float accuracy);
 }
 
+namespace SensorFusionConstants {
+
+    struct Sensor {
+        float accuracy; // Sensor's angular accuracy in radians
+        float weight;   // Weight for sensor fusion (0.0 to 1.0)
+    };
+
+    constexpr Sensor GY271 = { GY271Magnetometer::kAccuracy, 0.0f }; // Weight will be adjusted based on calibration status
+    constexpr Sensor FakeMagnetometer = { 0.0f, 1.0f }; // Placeholder sensor with full weight for testing
+
+}
+
 class FusedAttitudeSensor {
 public:
+
     FusedAttitudeSensor();
     bool init();
     void update();
@@ -41,6 +55,7 @@ private:
     static constexpr uint32_t kFaultReestablishTimeoutMs = 5000;
 
     GY271Magnetometer _magSensor;
+    FakeMagnetometer _fakeMagSensor;
     // Future expansion sensors (e.g., IMU MPU6050, StarTracker, etc.) can be placed cleanly here
     
     float _currentAttitude;

@@ -18,7 +18,7 @@ float Filters::filterOutChangesBelowAccuracy(float newValue, float existingValue
 // FusedAttitudeSensor Implementation
 
 FusedAttitudeSensor::FusedAttitudeSensor() 
-    : _magSensor("/dev/i2c-1", 0x0D), _currentAttitude(0.0f), _healthy(false),
+    : _magSensor("/dev/i2c-1", 0x0D), _fakeMagSensor(), _currentAttitude(0.0f), _healthy(false),
       _faultActive(false), _faultDetectedAt(std::chrono::steady_clock::now()), _sensorFaultsCount(0) {}
 
 bool FusedAttitudeSensor::init() {
@@ -64,17 +64,18 @@ void FusedAttitudeSensor::update() {
 }
 
 bool FusedAttitudeSensor::readCurrentAttitude() {
-    float mx = 0.0f;
-    float my = 0.0f;
-    float mz = 0.0f;
-    if (!_magSensor.readMagneticField(mx, my, mz)) {
-        return false;
-    }
+    // float mx = 0.0f;
+    // float my = 0.0f;
+    // float mz = 0.0f;
+    // if (!_magSensor.readMagneticField(mx, my, mz)) {
+    //     return false;
+    // }
 
-    const float rawAttitude = std::atan2(my, mx);
-    // Filter out sensor accuracy noise
-    _currentAttitude = Filters::filterOutChangesBelowAccuracy(rawAttitude, _currentAttitude, GY271Magnetometer::kAccuracy);
-    (void)mz;
+    // const float rawAttitude = std::atan2(my, mx);
+    // // Filter out sensor accuracy noise
+    // _currentAttitude = Filters::filterOutChangesBelowAccuracy(rawAttitude, _currentAttitude, SensorFusionConstants::GY271.accuracy);
+    // (void)mz;
+    _currentAttitude = _fakeMagSensor.readAttitude();
     return true;
 }
 

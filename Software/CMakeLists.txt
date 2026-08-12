@@ -17,6 +17,7 @@ set(SOURCES
     src/FusedAttitudeSensor.cpp
     src/GY271Magnetometer.cpp
     src/ControlAlgorithm.cpp
+    src/FakeMagnetometer.cpp
 )
 
 # Define the output executable binary target name
