@@ -158,13 +158,13 @@ bool AOCSController::update() {
         }
     }
 
-    // Only send the command if the values have changed
+    // Only send the command immediately if the values have changed
     if (commandChanged) {
         return executeFullDuplexTransfer(_commandedTorque, _commandedThrust, false);
     } 
     else if (elapsedMs >= CommConstants::MIN_COMM_PERIOD_MS) {
-        // No new command, but heartbeat interval hit: Send a NOP Telemetry Poll Frame
-        return executeFullDuplexTransfer(_commandedTorque, _commandedThrust, true);
+        // Not a new command but the minimum communication period has elapsed, so repeat it anyway in case the last one was missed and to make sure we get a telemetry update
+        return executeFullDuplexTransfer(_commandedTorque, _commandedThrust, false);
     }
 
     // Silence mode active: No bus transmission needed on this pass
