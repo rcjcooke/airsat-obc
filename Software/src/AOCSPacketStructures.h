@@ -5,13 +5,13 @@
 #include <cstdint>
 
 namespace AOCSPacketConstants {
-constexpr uint8_t kSyncByte0 = 0xAA;
-constexpr uint8_t kSyncByte1 = 0x55;
-constexpr std::size_t kSyncSize = 2;
-constexpr std::size_t kChecksumSize = 2;
-constexpr std::size_t kCommandPayloadSize = 22;
-constexpr std::size_t kTelemetryPayloadSize = 22;
-constexpr std::size_t kFrameSize = kSyncSize + kCommandPayloadSize + kChecksumSize;
+    constexpr uint8_t kSyncByte0 = 0xAA;
+    constexpr uint8_t kSyncByte1 = 0x55;
+    constexpr std::size_t kSyncSize = 2;
+    constexpr std::size_t kChecksumSize = 2;
+    constexpr std::size_t kCommandPayloadSize = 22;
+    constexpr std::size_t kTelemetryPayloadSize = 22;
+    constexpr std::size_t kFrameSize = kSyncSize + kCommandPayloadSize + kChecksumSize;
 }
 
 #pragma pack(push, 1)
