@@ -49,7 +49,7 @@ int main(int argc, char* argv[]) {
     while (runApplication) {
         auto startTime = std::chrono::steady_clock::now();
 
-        aocsSubsystem.runIteration();
+        aocsSubsystem.update();
 
         auto endTime = std::chrono::steady_clock::now();
         auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);

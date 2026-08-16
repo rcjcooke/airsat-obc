@@ -22,24 +22,39 @@ public:
     // Updated: Accept a runCalibration configuration flag
     bool init(bool runCalibration = true);
     
-    void runIteration();
+    void updateSubsystems(std::chrono::steady_clock::time_point time);
+    void executeSafetyChecks();
+    void updateTelemetry(std::chrono::steady_clock::time_point time);
+    void printTelemetryReport(std::chrono::steady_clock::time_point time, const ControlAlgorithm::ControlCommands& commands);
+    void update();
+
     void setTargetAttitude(float targetRad);
     void calibrateSensors(uint32_t durationMs = 15000);
 
 private:
-    AOCSController _controller;
-    FusedAttitudeSensor _attitudeSensor;
 
-    ControlAlgorithm _controlAlgorithm;
+    // Hardware links
+    AOCSController m_aocsHardwareLink;
+    FusedAttitudeSensor m_attitudeSensor;
 
-    float _targetAttitudeRad;
-    float _lastAttitudeRad;
-    bool _isFirstIteration;
-    std::chrono::steady_clock::time_point _lastExecutionTime;
-    std::chrono::steady_clock::time_point _lastReportTime;
+    // Control Algorithm
+    ControlAlgorithm m_controlAlgorithm;
 
-    std::chrono::steady_clock::time_point _lastValidTelemetryTime;
-    bool _hasReceivedAnyTelemetry;
+    // Execution state variables
+    std::chrono::steady_clock::time_point m_lastExecutionTime {std::chrono::steady_clock::now()};
+    std::chrono::steady_clock::time_point m_lastReportTime {std::chrono::steady_clock::now()};
+    std::chrono::steady_clock::time_point m_lastValidTelemetryTime {std::chrono::steady_clock::now()};
+    bool m_isFirstIteration {true};
+    bool m_hasReceivedAnyTelemetry {false};
+
+    // Telemetry state variables
+    float m_targetAttitudeRad {0.0f};
+    float m_lastAttitudeRad {0.0f};
+    float m_airsatAttitudeRad {0.0f};
+    float m_airsatAngularVelocityRadS {0.0f};
+    float m_angularMomentum {0.0f};
+    float m_remainingPropellant {0.0f};
+
 };
 
 #endif
