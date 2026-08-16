@@ -30,9 +30,15 @@ To install on a Raspberry Pi:
 ## Optional
 To set the OBC to start automatically when the Raspberry Pi starts up (highly recommended!):
 
+NOTE: This uses `systemctl` to run the service and `logrotate` to manage the logs. Both of these should be installed and running by default on a Raspberry Pi.
+
 - Copy the `obc.service` file to `/lib/systemd/system/`. 
   - Note: You'll need to change the `ExecStart` path to reflect the location you've installed the obc.
-- Run `sudo systemctl daemon-reload` to get the system to find it
+- Create the log directory (`/var/log/obc/`) and file (`obc.log`) for it:
+  - `sudo mkdir -p /var/log/obc/ && sudo touch /var/log/obc/obc.log`
+- Copy the log rotate config file `logrotate.d/obc` to `/etc/logrotate.d/obc`
+  - `sudo cp ./logrotate.d/obc /etc/logrotate.d/`
+- Run `sudo systemctl daemon-reload` to get the system to find the new service
 - Run `sudo systemctl enable obc.service` to enable it.
 - Run `sudo reboot` to restart the system and test that it did in fact start up on boot!
 
@@ -45,5 +51,5 @@ Command line options:
 
 - `--skip-cal` - Skips the calibration phase during startup
 
-If you've set it up to run as a service, then you can view the logs at `Software/obc.log`. e.g. `tail -f ~/obc/Software/obc.log`
+If you've set it up to run as a service, then you can view the logs at `/var/log/obc/obc.log`. e.g. `tail -f /var/log/obc/obc.log`
 

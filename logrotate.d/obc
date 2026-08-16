@@ -1,0 +1,14 @@
+/var/log/obc/*.log {
+  # Rather than create, empty the existing log file. Small risk of log line loss, but means service doesn't need to be restarted
+  copytruncate
+  # Rotate the log file daily but only it goes over 50Mb
+  daily
+  minsize 50M
+  # The new empty log file will be created in place rather than truncating the existing file
+  create
+  # Append the rotation date to the log file
+  dateext
+  dateformat -%Y%m%d-%s
+  # Compress old log files
+  compress
+}

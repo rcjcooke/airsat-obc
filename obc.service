@@ -1,9 +1,9 @@
 [Unit]
-Description=OBC
+Description=obc
 After=multi-user.target
 
 [Service]
-ExecStart=/bin/bash -c '/home/pi/obc/Software/build/OBC --skip-cal >> /home/pi/obc/Software/obc.log 2>&1'
+ExecStart=/bin/bash -c '/home/pi/obc/Software/build/obc --skip-cal >> /var/log/obc/obc.log 2>&1'
 Restart=always
 RestartSec=3
 
