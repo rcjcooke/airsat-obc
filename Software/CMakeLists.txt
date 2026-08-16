@@ -21,11 +21,11 @@ set(SOURCES
 )
 
 # Define the output executable binary target name
-add_executable(OBC ${SOURCES})
+add_executable(obc ${SOURCES})
 
 # Include directory indexing visibility controls
-target_include_directories(OBC PRIVATE src)
+target_include_directories(obc PRIVATE src)
 
 # Link standard system libraries (Required for thread sleep and timing structures)
 find_package(Threads REQUIRED)
-target_link_libraries(OBC PRIVATE Threads::Threads -lwiringPi)
+target_link_libraries(obc PRIVATE Threads::Threads -lwiringPi)
